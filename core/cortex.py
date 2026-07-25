@@ -87,11 +87,17 @@ class ActionTrace:
     """
     Последний след транзакции (Last Transaction Trace) — фиксирует
     связку Input -> Action для последующей оценки Feedback на СЛЕДУЮЩЕМ шаге.
+
+    node_id   — единичный узел (используется memory_retrieval).
+    node_ids  — список узлов (используется babbling — несколько
+                syllable-узлов, задействованных в одной лепетной фразе).
+                None для action_type, не оперирующих множеством узлов.
     """
     user_input: str
     bot_output: str
     node_id: Optional[int]
-    action_type: str  # "echolalia" | "llm_generation" | "memory_retrieval"
+    action_type: str  # "echolalia" | "llm_generation" | "memory_retrieval" | "babbling"
+    node_ids: Optional[List[int]] = None
 
 
 @dataclass
@@ -105,6 +111,7 @@ class FeedbackResult:
     effect: str  # "rewarded" | "penalized" | "bias_adjusted" | "no_trace" | "neutral"
     mood_state: Optional[MoodState] = None
     retrospective_correction: Optional["RetrospectiveCorrectionResult"] = None
+    node_ids: Optional[List[int]] = None
 
 
 @dataclass
@@ -112,14 +119,12 @@ class FeedbackHistoryEntry:
     """
     Один применённый Feedback-эффект в истории Retrospective Correction.
 
-    applied_delta — знаковая величина, которая была реально применена к
-    node_id (положительная = reinforce, отрицательная = penalize). Именно
-    её нужно откатить (умножив на -1), если впоследствии выяснится, что
-    фидбэк был ложным (сарказм/самокоррекция пользователя).
-
-    reversed=True ставится после того, как эта запись уже была откатана
-    Retrospective Correction — защита от повторного отката одной и той же
-    записи несколькими последующими противоречащими сообщениями.
+    node_ids — для babbling-действий: список syllable-узлов, к которым
+    был применён applied_delta (единый для всех, см. apply_feedback).
+    Retrospective Correction (см. _check_retrospective_correction) пока
+    обрабатывает только записи с одиночным node_id (memory_retrieval) —
+    это осознанное упрощение первой версии, babbling-записи в отложенном
+    опровержении участвовать не будут.
     """
     timestamp: Optional[float]
     valence: float
@@ -130,6 +135,7 @@ class FeedbackHistoryEntry:
     action_type: str
     applied_delta: float = 0.0
     reversed: bool = False
+    node_ids: Optional[List[int]] = None
 
 
 @dataclass
@@ -299,12 +305,17 @@ class Cortex:
             # известными слогами, а не просто повторяет ввод Юзера.
             vocabulary_size = self.memory.get_vocabulary_size()
             if self.instincts.should_babble(vocabulary_size):
-                known_syllables = self.memory.get_known_syllables(limit=10)
-                babble_text = self.instincts.generate_babble_response(known_syllables)
-                if babble_text:
-                    self._record_action_trace(text, babble_text, node_id=None, action_type="babbling")
+                known_syllables = self.memory.get_known_syllables()
+                babble_result = self.instincts.generate_babble_response(known_syllables)
+                if babble_result.text:
+                    self._record_action_trace(
+                        text, babble_result.text,
+                        node_id=None,
+                        action_type="babbling",
+                        node_ids=babble_result.used_node_ids,
+                    )
                     return CortexResponse(
-                        text=babble_text,
+                        text=babble_result.text,
                         confidence=confidence,
                         perplexity=perplexity,
                         source="babbling",
@@ -437,6 +448,7 @@ class Cortex:
         bot_output: str,
         node_id: Optional[int],
         action_type: str,
+        node_ids: Optional[List[int]] = None,
     ) -> None:
         """Фиксирует связку Input -> Action в last_action_trace (Триада)."""
         self.last_action_trace = ActionTrace(
@@ -444,10 +456,11 @@ class Cortex:
             bot_output=bot_output,
             node_id=node_id,
             action_type=action_type,
+            node_ids=node_ids,
         )
         logger.debug(
-            "[ACTION TRACE] input=%r output=%r node_id=%s action_type=%s",
-            user_input[:40], bot_output[:40], node_id, action_type,
+            "[ACTION TRACE] input=%r output=%r node_id=%s node_ids=%s action_type=%s",
+            user_input[:40], bot_output[:40], node_id, node_ids, action_type,
         )
 
     def _check_retrospective_correction(
@@ -596,6 +609,24 @@ class Cortex:
                     )
                 effect = "rewarded"
 
+            elif trace.action_type == "babbling" and trace.node_ids:
+                # Позитивный фидбэк на лепет: усиливаем КАЖДЫЙ задействованный
+                # слог (он оказался "удачным" в этой комбинации) и укрепляем
+                # ассоциативные рёбра МЕЖДУ ними — успешная комбинация слогов
+                # запоминается как связка, зачаток будущего "слова",
+                # выкристаллизовывающегося из повторяющегося удачного лепета.
+                boost = valence * config.REWARD_POSITIVE_BOOST
+                for node_id in trace.node_ids:
+                    self.memory.reinforce_node(node_id, boost=boost, timestamp=timestamp)
+                self.memory.reinforce_coactivation(trace.node_ids, weight_boost=boost, timestamp=timestamp)
+                applied_delta = boost
+                effect = "rewarded"
+
+                logger.info(
+                    "[REWARD EVAL] Feedback Valence: +%.2f -> Rewarding Babble Syllables: %s",
+                    valence, trace.node_ids,
+                )
+
             if trace.action_type == "llm_generation":
                 # Успешная смысловая генерация без памяти была подтверждена
                 # позитивным фидбэком -> снижаем вероятность эхолалии для
@@ -604,10 +635,11 @@ class Cortex:
                 if effect == "neutral":
                     effect = "bias_adjusted"
 
-            logger.info(
-                "[REWARD EVAL] Feedback Valence: +%.2f -> Rewarding Node ID: %s",
-                valence, trace.node_id,
-            )
+            if trace.action_type != "babbling":
+                logger.info(
+                    "[REWARD EVAL] Feedback Valence: +%.2f -> Rewarding Node ID: %s",
+                    valence, trace.node_id,
+                )
 
         else:  # valence < 0
             if trace.node_id is not None:
@@ -616,6 +648,22 @@ class Cortex:
                 applied_delta = -penalty
                 effect = "penalized"
 
+            elif trace.action_type == "babbling" and trace.node_ids:
+                # Негативный фидбэк на лепет: штрафуем КАЖДЫЙ задействованный
+                # слог этой конкретной неудачной комбинации — она станет
+                # реже выбираться при следующей взвешенной выборке
+                # (см. InstinctSystem.generate_babble_response).
+                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY
+                for node_id in trace.node_ids:
+                    self.memory.penalize_node(node_id, penalty=penalty, timestamp=timestamp)
+                applied_delta = -penalty
+                effect = "penalized"
+
+                logger.info(
+                    "[REWARD EVAL] Feedback Valence: %.2f -> Penalizing Babble Syllables: %s",
+                    valence, trace.node_ids,
+                )
+
             if trace.action_type == "echolalia":
                 # Эхолалия оказалась неудачной в этом контексте -> повышаем
                 # штраф на эхолалию для похожего ввода на будущее.
@@ -623,10 +671,11 @@ class Cortex:
                 if effect == "neutral":
                     effect = "bias_adjusted"
 
-            logger.info(
-                "[REWARD EVAL] Feedback Valence: %.2f -> Penalizing Node ID: %s",
-                valence, trace.node_id,
-            )
+            if trace.action_type != "babbling":
+                logger.info(
+                    "[REWARD EVAL] Feedback Valence: %.2f -> Penalizing Node ID: %s",
+                    valence, trace.node_id,
+                )
 
         # --- Регистрируем эту связку в истории Retrospective Correction,
         # предварительно "реабилитируя" маркеры записи, которая будет
@@ -642,6 +691,7 @@ class Cortex:
                 action_type=trace.action_type,
                 applied_delta=applied_delta,
                 reversed=False,
+                node_ids=trace.node_ids,
             )
         )
 
@@ -654,6 +704,7 @@ class Cortex:
             effect=effect,
             mood_state=mood_state,
             retrospective_correction=retrospective_result,
+            node_ids=trace.node_ids,
         )
 
     def _record_feedback_history(self, entry: FeedbackHistoryEntry) -> None:

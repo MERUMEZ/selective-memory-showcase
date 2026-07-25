@@ -215,9 +215,13 @@ class BrainSession:
             )
 
             sign = "+" if feedback_valence > 0 else ""
+            if feedback_result.action_type == "babbling" and feedback_result.node_ids:
+                target_desc = f"Syllable Node IDs: {feedback_result.node_ids}"
+            else:
+                target_desc = f"Node ID: {feedback_result.node_id}"
             reward_eval_log = (
                 f"[REWARD EVAL] Feedback Valence: {sign}{feedback_valence:.2f} -> "
-                f"{'Rewarding' if feedback_valence > 0 else 'Penalizing'} Node ID: {feedback_result.node_id}"
+                f"{'Rewarding' if feedback_valence > 0 else 'Penalizing'} {target_desc}"
             )
 
             retro = feedback_result.retrospective_correction

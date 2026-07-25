@@ -24,11 +24,13 @@ user_input. Позитивный фидбэк на успешную смысло
 
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import config
-from typing import Dict, List, Optional
 from storage.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from memory.graph_memory import KnownSyllable
 
 logger = get_logger(__name__)
 
@@ -39,6 +41,18 @@ class InstinctState:
     current_stress: float
     is_overloaded: bool
     effective_plasticity_threshold: float
+
+
+@dataclass
+class BabbleResult:
+    """
+    Результат генерации лепета: итоговый текст + ID реально использованных
+    syllable-узлов (в порядке первого появления, без дублей) — нужен для
+    Reinforcement Loop (Cortex.apply_feedback), чтобы знать, ЧТО конкретно
+    подкреплять/штрафовать по реакции пользователя.
+    """
+    text: str
+    used_node_ids: List[int]
 
 
 class InstinctSystem:
@@ -234,16 +248,21 @@ class InstinctSystem:
 
         return random.random() < config.BABBLING_PROBABILITY
 
-    def generate_babble_response(self, known_syllables: List[str]) -> str:
+    def generate_babble_response(self, known_syllables: List["KnownSyllable"]) -> BabbleResult:
         """
-        Генерирует "лепетный" ответ — случайную комбинацию УЖЕ ИЗВЕСТНЫХ
-        слогов (взятых из графа памяти, см. MemoryGraph.get_known_syllables),
-        имитируя довербальную стадию освоения речи ребёнком ("ма-ма-ба",
-        "ту-ту-ка" и т.п.).
+        Генерирует "лепетный" ответ — ВЗВЕШЕННУЮ (по весу/усвоенности узла)
+        комбинацию уже известных слогов, имитируя довербальную стадию
+        освоения речи ребёнком ("ма-ма-ба", "ту-ту-ка" и т.п.).
 
-        Если известных слогов недостаточно (< BABBLING_MIN_KNOWN_SYLLABLES),
-        возвращает пустую строку — вызывающий код (Cortex) в этом случае
-        должен откатиться на обычную эхолалию.
+        В отличие от прежней реализации (чистый random.choice), более
+        "усвоенные" слоги (выше weight — чаще встречались/чаще получали
+        позитивный фидбэк раньше) выбираются ЧАЩЕ, но не исключительно —
+        это даёт постепенный уклон к уже проверенным комбинациям без
+        полной потери разнообразия.
+
+        Возвращает BabbleResult(text="", used_node_ids=[]), если известных
+        слогов недостаточно (< BABBLING_MIN_KNOWN_SYLLABLES) — вызывающий
+        код (Cortex) в этом случае должен откатиться на обычную эхолалию.
         """
         import random
 
@@ -252,19 +271,32 @@ class InstinctSystem:
                 "[INSTINCT: BABBLING] Недостаточно известных слогов (%d < %d) -> пропуск",
                 len(known_syllables), config.BABBLING_MIN_KNOWN_SYLLABLES,
             )
-            return ""
+            return BabbleResult(text="", used_node_ids=[])
 
-        words = []
+        # Взвешенная выборка: минимум 0.01, чтобы совсем "свежие" слоги
+        # (weight около 0) не получали нулевую вероятность быть выбранными —
+        # разнообразие должно сохраняться даже для новых слогов.
+        weights = [max(0.01, s.weight) for s in known_syllables]
+
+        words: List[str] = []
+        used_ids: List[int] = []
+
         for _ in range(config.BABBLING_WORDS_PER_RESPONSE):
             syllable_count = random.randint(
                 config.BABBLING_MIN_SYLLABLES, config.BABBLING_MAX_SYLLABLES
             )
-            chosen = [random.choice(known_syllables) for _ in range(syllable_count)]
-            words.append("".join(chosen))
+            chosen = random.choices(known_syllables, weights=weights, k=syllable_count)
+            words.append("".join(c.text for c in chosen))
+            used_ids.extend(c.id for c in chosen)
 
         response = " ".join(words)
-        logger.info("[INSTINCT: BABBLING] Лепет сгенерирован -> %r", response[:60])
-        return response
+        unique_used_ids = list(dict.fromkeys(used_ids))  # дедуп с сохранением порядка
+
+        logger.info(
+            "[INSTINCT: BABBLING] Лепет сгенерирован -> %r (node_ids=%s)",
+            response[:60], unique_used_ids,
+        )
+        return BabbleResult(text=response, used_node_ids=unique_used_ids)
 
     # ----------------------------------------------------------------------
 
