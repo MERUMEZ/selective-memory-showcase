@@ -1,0 +1,33 @@
+# --- Секреты ---
+.env
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.venv/
+env/
+
+# --- Базы данных (per-user "мозги", генерируются на сервере) ---
+storage/*.db
+storage/brains/*.db
+storage/test_brains/*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Логи ---
+storage/logs/*.log
+*.log
+
+# --- Модели (кэш, скачивается на сервере) ---
+storage/models/*
+!storage/models/.gitkeep
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
