@@ -170,6 +170,12 @@ MEMORY_WEIGHT_INFLUENCE = _get_float("MEMORY_WEIGHT_INFLUENCE", 0.15)
 # (отсекаем короткие союзы/предлоги без спискастоп-слов)
 MEMORY_MIN_KEYWORD_LENGTH = _get_int("MEMORY_MIN_KEYWORD_LENGTH", 3)
 
+# Порог уверенности (similarity), выше которого MEMORY_HIT считается
+# "уверенным совпадением" и получает обязательную директиву использования
+# в промпте. Ниже порога — совпадение слабое/на грани, LLM явно
+# предупреждается, что оно может быть нерелевантным (Фикс F).
+MEMORY_INJECTION_CONFIDENT_THRESHOLD = _get_float("MEMORY_INJECTION_CONFIDENT_THRESHOLD", 0.55)
+
 
 # ==========================================================================
 # 9. LLM / OPENROUTER API — подключение к языковой модели
@@ -194,6 +200,15 @@ LLM_TEMPERATURE = _get_float("LLM_TEMPERATURE", 0.7)
 
 # Максимальное количество токенов в ответе модели
 LLM_MAX_TOKENS = _get_int("LLM_MAX_TOKENS", 300)
+
+# Континуальный (НЕ ступенчатый) лимит длины ответа LLM: реальный max_tokens
+# запроса растёт линейно с размером словаря от LLM_MAX_TOKENS_FLOOR (только
+# начинающий говорить полными фразами) до LLM_MAX_TOKENS (потолок, "зрелая"
+# речь), насыщаясь при словаре LLM_MAX_TOKENS_GROWTH_VOCAB слов. Растёт
+# гладко на каждом отдельном приросте словаря, НЕ привязан к дискретным
+# Stage 0/1/2 из SPEECH_STAGE_* (Фикс G, доп. к Фиксу C).
+LLM_MAX_TOKENS_FLOOR = _get_int("LLM_MAX_TOKENS_FLOOR", 60)
+LLM_MAX_TOKENS_GROWTH_VOCAB = _get_int("LLM_MAX_TOKENS_GROWTH_VOCAB", 500)
 
 # Таймаут HTTP-запроса к OpenRouter (в секундах)
 LLM_REQUEST_TIMEOUT = _get_float("LLM_REQUEST_TIMEOUT", 30.0)
@@ -544,6 +559,22 @@ BABBLING_WORDS_PER_RESPONSE = _get_int("BABBLING_WORDS_PER_RESPONSE", 2)
 # чаще благодаря взвешенной выборке (см. InstinctSystem.generate_babble_response).
 BABBLING_SYLLABLE_POOL_SIZE = _get_int("BABBLING_SYLLABLE_POOL_SIZE", 30)
 
+# ==========================================================================
+# 17b. SPEECH STAGE GATING — стадии речевого развития (continuous, с зоной смешения)
+# ==========================================================================
+# Stage 0 (довербальный): vocab < SPEECH_STAGE_0_MAX_VOCAB -> только лепет/эхолалия,
+# LLM и поиск по LTM не запускаются вообще.
+SPEECH_STAGE_0_MAX_VOCAB = _get_int("SPEECH_STAGE_0_MAX_VOCAB", 50)
+
+# Stage 1 (раннее детство): vocab < SPEECH_STAGE_1_MAX_VOCAB -> LLM разрешена,
+# но с усиленными ограничениями простоты речи (короткие фразы, без абстракций).
+SPEECH_STAGE_1_MAX_VOCAB = _get_int("SPEECH_STAGE_1_MAX_VOCAB", 300)
+
+# Stage 2 (свободная речь): vocab >= SPEECH_STAGE_1_MAX_VOCAB -> обычные ограничения.
+
+# Ширина зоны смешения вокруг каждой границы (в узлах словаря). Внутри этой
+# зоны переход происходит ВЕРОЯТНОСТНО (линейно растущий шанс), а не резко.
+SPEECH_STAGE_BLEND_WIDTH = _get_int("SPEECH_STAGE_BLEND_WIDTH", 15)
 
 # ==========================================================================
 # 18. RETROSPECTIVE CORRECTION — устойчивость к сарказму и ложной похвале

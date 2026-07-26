@@ -34,6 +34,7 @@ CHAT_COMPLETIONS_ENDPOINT = "/chat/completions"
 def generate_llm_response(
     messages: List[Dict[str, str]],
     system_prompt: Optional[str] = None,
+    max_tokens: Optional[int] = None,
 ) -> Optional[str]:
     """
     Отправляет запрос в OpenRouter Chat Completions API и возвращает
@@ -45,6 +46,11 @@ def generate_llm_response(
         system_prompt  — опциональный system-промпт (например,
                           [MEMORY CONTEXT] из core/cortex.py). Если передан,
                           добавляется в начало messages как role="system".
+        max_tokens     — опциональный override для config.LLM_MAX_TOKENS
+                          (используется для континуального лимита длины
+                          ответа в зависимости от стадии речевого развития,
+                          см. Cortex._resolve_max_tokens). Если не передан —
+                          используется статичный config.LLM_MAX_TOKENS.
 
     Возвращает:
         str  — текст ответа модели при успехе.
@@ -71,7 +77,7 @@ def generate_llm_response(
         "model": config.OPENROUTER_MODEL,
         "messages": final_messages,
         "temperature": config.LLM_TEMPERATURE,
-        "max_tokens": config.LLM_MAX_TOKENS,
+        "max_tokens": max_tokens if max_tokens is not None else config.LLM_MAX_TOKENS,
     }
 
     headers = {

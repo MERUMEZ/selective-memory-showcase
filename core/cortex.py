@@ -250,6 +250,27 @@ class Cortex:
         # --- LEXICAL ACQUISITION: побочный эффект, не блокирует основной поток ---
         self.memory.process_language_input(text, timestamp=timestamp)
 
+        # --- НОВОЕ: единый гейт ДО поиска по памяти/LLM. ---
+        # Считаем vocabulary_size один раз и проверяем ОБЕ причины
+        # принудительной мимикрии: физиологическую (перегрузка стрессом)
+        # и развитийную (Stage 0 — довербальный период). Обе проверки
+        # выполняются РАНЬШЕ search() — раньше перегрузка и стадия
+        # игнорировались при удачном MEMORY_HIT.
+        vocabulary_size = self.memory.get_vocabulary_size()
+        speech_stage = self._resolve_speech_stage(vocabulary_size)
+        max_tokens = self._resolve_max_tokens(vocabulary_size)
+
+        forced_mimicry = self.instincts.is_overloaded(timestamp) or speech_stage == 0
+        if forced_mimicry:
+            reason = "перегрузка стрессом" if self.instincts.is_overloaded(timestamp) else "Stage 0 (довербальный)"
+            logger.warning(
+                "[CORTEX GATE] Принудительная мимикрия (%s) -> поиск по LTM/LLM пропущен",
+                reason,
+            )
+            return self._generate_mimicry_response(
+                text, confidence, perplexity, mood_state, vocabulary_size
+            )
+
         stm_context = self.stm.get_context_string()
 
         # --- Шаг 1: всегда сначала ищем в LTM ---
@@ -258,13 +279,20 @@ class Cortex:
 
         if matches:
             best = matches[0]
+            # matches[1:] — узлы, подтянутые Spreading Activation (multi-hop
+            # RAG) сверх top_k=1; search() уже вернул их с полным текстом
+            # (context/response), раньше они просто выбрасывались.
+            associated_matches = matches[1:]
             print(f"[MEMORY HIT] Найден узел id={best.id} (score={best.similarity:.3f}) -> подмешиваю в контекст")
 
-            prompt_context = self.build_prompt_context(text, best, stm_context)
+            prompt_context = self.build_prompt_context(
+                text, best, stm_context, speech_stage=speech_stage, associated=associated_matches
+            )
 
             llm_text = generate_llm_response(
                 messages=[{"role": "user", "content": text}],
                 system_prompt=prompt_context,
+                max_tokens=max_tokens,
             )
 
             if llm_text is None:
@@ -283,6 +311,21 @@ class Cortex:
 
             self.memory.reinforce_node(best.id, boost=0.05, timestamp=timestamp)
 
+            # Узлы, подтянутые Spreading Activation, тоже реально попали в
+            # промпт (associative_block) и могли повлиять на ответ LLM ->
+            # слегка подкрепляем их (меньшим boost, чем основной узел) и
+            # укрепляем связь МЕЖДУ ними и best.id — узлы, использованные
+            # совместно в одном ответе, "сближаются" (то же Hebbian-подобное
+            # обучение, что уже применяется к со-активированным слогам
+            # babbling в apply_feedback).
+            if associated_matches:
+                associated_ids = [m.id for m in associated_matches]
+                for assoc_id in associated_ids:
+                    self.memory.reinforce_node(assoc_id, boost=0.02, timestamp=timestamp)
+                self.memory.reinforce_coactivation(
+                    [best.id] + associated_ids, weight_boost=0.02, timestamp=timestamp
+                )
+
             self._record_action_trace(text, response_text, trace_node_id, action_type)
 
             return CortexResponse(
@@ -297,48 +340,22 @@ class Cortex:
 
         # --- Шаг 2: LTM не сработала — лепет / эхолалия / полноценная генерация ---
         context_key = text.strip().lower()
-        use_echolalia = self.instincts.should_use_echolalia(confidence, context_key=context_key)
+        use_echolalia = self.instincts.should_use_echolalia(confidence, context_key=context_key, timestamp=timestamp)
 
         if use_echolalia:
-            # BABBLING: на стадии малого словаря лепет предпочтительнее
-            # "пустой" эхолалии — цифровой ребёнок пробует звучание речи
-            # известными слогами, а не просто повторяет ввод Юзера.
-            vocabulary_size = self.memory.get_vocabulary_size()
-            if self.instincts.should_babble(vocabulary_size):
-                known_syllables = self.memory.get_known_syllables()
-                babble_result = self.instincts.generate_babble_response(known_syllables)
-                if babble_result.text:
-                    self._record_action_trace(
-                        text, babble_result.text,
-                        node_id=None,
-                        action_type="babbling",
-                        node_ids=babble_result.used_node_ids,
-                    )
-                    return CortexResponse(
-                        text=babble_result.text,
-                        confidence=confidence,
-                        perplexity=perplexity,
-                        source="babbling",
-                        mood_state=mood_state,
-                    )
-                # known_syllables недостаточно -> проваливаемся в обычную эхолалию ниже
-
-            echo_text = self.instincts.generate_echolalia_response(text)
-            self._record_action_trace(text, echo_text, node_id=None, action_type="echolalia")
-            return CortexResponse(
-                text=echo_text,
-                confidence=confidence,
-                perplexity=perplexity,
-                source="echolalia",
-                mood_state=mood_state,
+            # vocabulary_size уже посчитан выше (в едином гейте перед search()) —
+            # переиспользуем его вместо повторного запроса к БД.
+            return self._generate_mimicry_response(
+                text, confidence, perplexity, mood_state, vocabulary_size
             )
 
         # --- Шаг 3: MEMORY MISS + уверенность достаточна -> LLM + STM-контекст ---
-        system_prompt = self._build_default_prompt_with_stm(stm_context)
+        system_prompt = self._build_default_prompt_with_stm(stm_context, speech_stage=speech_stage)
 
         llm_text = generate_llm_response(
             messages=[{"role": "user", "content": text}],
             system_prompt=system_prompt,
+            max_tokens=max_tokens,
         )
 
         if llm_text is None:
@@ -387,6 +404,24 @@ class Cortex:
         tabula_rasa_block = self._build_tabula_rasa_block()
         mood_block = self._build_mood_block()
 
+        # Проактивное сообщение должно уважать те же ограничения речевого
+        # развития, что и обычный generate_response() (Фиксы C, G) — иначе
+        # довербальный бот (Stage 0) мог бы "вдруг" заговорить связно просто
+        # потому, что ему стало скучно, минуя гейт из _resolve_speech_stage.
+        vocabulary_size = self.memory.get_vocabulary_size()
+        speech_stage = self._resolve_speech_stage(vocabulary_size)
+
+        if speech_stage == 0:
+            logger.info(
+                "[PROACTIVE GATE] Stage 0 (довербальный, vocab=%d) -> "
+                "проактивная LLM-генерация пропущена",
+                vocabulary_size,
+            )
+            return None
+
+        max_tokens = self._resolve_max_tokens(vocabulary_size)
+        stage_block = self._build_stage_constraint_block(speech_stage)
+
         if node is not None:
             associated_edges_str = self._format_associated_edges(node.id)
             proactive_block = config.PROACTIVE_PROMPT_TEMPLATE.format(
@@ -400,12 +435,13 @@ class Cortex:
             proactive_block = config.PROACTIVE_FALLBACK_PROMPT
             source_node_id = None
 
-        prompt = f"{tabula_rasa_block}\n\n{mood_block}\n\n{proactive_block}"
+        prompt = f"{tabula_rasa_block}\n\n{mood_block}\n\n{proactive_block}{stage_block}"
         logger.info("[PROMPT BUILD] Подмешаны супер-узлы: Self-Model & User-Model")
 
         llm_text = generate_llm_response(
             messages=[{"role": "user", "content": "Сформируй проактивное сообщение согласно инструкции."}],
             system_prompt=prompt,
+            max_tokens=max_tokens,
         )
 
         if llm_text is None:
@@ -752,10 +788,34 @@ class Cortex:
     # Промпт-контекст: LTM (память) + STM (текущий диалог)
     # ----------------------------------------------------------------------
 
-    def build_prompt_context(self, query: str, match: MemoryMatch, stm_context: str) -> str:
+    def build_prompt_context(
+        self,
+        query: str,
+        match: MemoryMatch,
+        stm_context: str,
+        speech_stage: int = 2,
+        associated: Optional[List[MemoryMatch]] = None,
+    ) -> str:
         stm_block = f"\n\n[CURRENT CONVERSATION]\n{stm_context}" if stm_context else ""
         tabula_rasa_block = self._build_tabula_rasa_block()
         mood_block = self._build_mood_block()
+        stage_block = self._build_stage_constraint_block(speech_stage)
+        associative_block = self._build_associative_block(associated)
+
+        if match.similarity >= config.MEMORY_INJECTION_CONFIDENT_THRESHOLD:
+            usage_instruction = (
+                "Это УВЕРЕННОЕ совпадение с прошлым разговором — обязательно "
+                "учти его смысл при ответе, не игнорируй его как случайный "
+                "шум. Не повторяй старый ответ дословно — интегрируй его "
+                "суть в новый, естественный ответ на текущий вопрос."
+            )
+        else:
+            usage_instruction = (
+                "Это воспоминание вспомнилось СМУТНО и может оказаться НЕ по "
+                "теме (слабое совпадение) — используй его ТОЛЬКО если оно "
+                "действительно связано с текущим вопросом; если явной связи "
+                "нет, полностью проигнорируй его и отвечай с чистого листа."
+            )
 
         memory_block = (
             "[MEMORY CONTEXT]\n"
@@ -763,18 +823,19 @@ class Cortex:
             f'  User сказал: "{match.context.strip()}"\n'
             f'  Bot ответил: "{match.response.strip()}"\n'
             f'Текущий вопрос: "{query.strip()}"\n'
-            "Используй этот прошлый опыт, если он релевантен, но отвечай "
-            "на текущий вопрос естественно, не повторяя старый ответ буквально."
+            f"{usage_instruction}"
+            f"{associative_block}"
             f"{stm_block}"
         )
 
         logger.info("[PROMPT BUILD] Подмешаны супер-узлы: Self-Model & User-Model")
-        return f"{tabula_rasa_block}\n\n{mood_block}\n\n{memory_block}"
+        return f"{tabula_rasa_block}\n\n{mood_block}\n\n{memory_block}{stage_block}"
 
-    def _build_default_prompt_with_stm(self, stm_context: str) -> str:
+    def _build_default_prompt_with_stm(self, stm_context: str, speech_stage: int = 2) -> str:
         tabula_rasa_block = self._build_tabula_rasa_block()
         mood_block = self._build_mood_block()
-        base_prompt = f"{tabula_rasa_block}\n\n{mood_block}\n\n{DEFAULT_SYSTEM_PROMPT}"
+        stage_block = self._build_stage_constraint_block(speech_stage)
+        base_prompt = f"{tabula_rasa_block}\n\n{mood_block}\n\n{DEFAULT_SYSTEM_PROMPT}{stage_block}"
 
         logger.info("[PROMPT BUILD] Подмешаны супер-узлы: Self-Model & User-Model")
 
@@ -805,6 +866,149 @@ class Cortex:
         настроение системы (радость/любопытство/тревога/привязанность).
         """
         return self.mood.get_state().describe_for_prompt()
+
+    def _build_stage_constraint_block(self, speech_stage: int) -> str:
+        """
+        Возвращает доп. блок инструкции для промпта в зависимости от стадии
+        речевого развития (см. _resolve_speech_stage). Stage 2 — без
+        дополнительных ограничений (пустая строка). Stage 0 сюда не должен
+        попадать вообще — гейт в generate_response() перехватывает его
+        раньше и не доходит до построения промпта.
+        """
+        if speech_stage == 1:
+            return (
+                "\n\n[ОГРАНИЧЕНИЕ РЕЧИ] Ты только начинаешь говорить полными "
+                "фразами. Отвечай ОДНИМ простым предложением, без сложных "
+                "терминов, метафор и абстракций. Говори так, как говорит "
+                "маленький ребёнок, который только выучил базовые слова."
+            )
+        return ""
+
+    def _build_associative_block(self, associated: Optional[List[MemoryMatch]]) -> str:
+        """
+        Формирует блок с воспоминаниями, всплывшими НЕ по прямому текстовому
+        совпадению, а по ассоциативной связи (Spreading Activation / multi-hop
+        RAG, см. MemoryGraph.search(with_associations=True)) с основным
+        найденным узлом. Раньше search() честно считал эти узлы (они лежали
+        в matches[1:]), но generate_response() использовал только matches[0],
+        полностью выбрасывая multi-hop контекст.
+        """
+        if not associated:
+            return ""
+
+        lines = []
+        for extra in associated[:3]:
+            lines.append(
+                f'  - (activation={extra.similarity:.2f}) User: "{extra.context.strip()[:80]}" '
+                f'-> Bot: "{extra.response.strip()[:80]}"'
+            )
+
+        return (
+            "\n\n[ASSOCIATIVE MEMORY] Эти воспоминания всплыли в сознании по "
+            "ассоциации с основным (не прямое совпадение, а связанная мысль):\n"
+            + "\n".join(lines)
+        )
+
+    def _generate_mimicry_response(
+        self,
+        text: str,
+        confidence: float,
+        perplexity: float,
+        mood_state: Optional[MoodState],
+        vocabulary_size: int,
+    ) -> CortexResponse:
+        """
+        Единая точка генерации защитной/довербальной мимикрии — используется
+        и при принудительном гейте (перегрузка стрессом / Stage 0, ДО поиска
+        по LTM), и при обычном срабатывании should_use_echolalia() после
+        MEMORY MISS. Внутри выбирает между babbling (если словарь мал
+        настолько, что should_babble() решает попробовать лепет) и обычной
+        эхолалией (fallback, если известных слогов недостаточно).
+
+        Раньше эта логика была продублирована в 3 местах — риск того, что
+        правка одной копии не попадёт в остальные и поведение расходится.
+        """
+        if self.instincts.should_babble(vocabulary_size):
+            known_syllables = self.memory.get_known_syllables()
+            babble_result = self.instincts.generate_babble_response(known_syllables)
+            if babble_result.text:
+                self._record_action_trace(
+                    text, babble_result.text,
+                    node_id=None,
+                    action_type="babbling",
+                    node_ids=babble_result.used_node_ids,
+                )
+                return CortexResponse(
+                    text=babble_result.text,
+                    confidence=confidence,
+                    perplexity=perplexity,
+                    source="babbling",
+                    mood_state=mood_state,
+                )
+            # known_syllables недостаточно -> проваливаемся в обычную эхолалию ниже
+
+        echo_text = self.instincts.generate_echolalia_response(text)
+        self._record_action_trace(text, echo_text, node_id=None, action_type="echolalia")
+        return CortexResponse(
+            text=echo_text,
+            confidence=confidence,
+            perplexity=perplexity,
+            source="echolalia",
+            mood_state=mood_state,
+        )
+
+    def _resolve_speech_stage(self, vocabulary_size: int) -> int:
+        """
+        Определяет текущую стадию речевого развития по размеру словаря,
+        с вероятностной "зоной смешения" на границах — вместо резкого
+        переключения, шанс перейти на следующую стадию линейно растёт
+        внутри полосы шириной SPEECH_STAGE_BLEND_WIDTH вокруг границы.
+
+        Stage 0 — довербальный: только лепет/эхолалия, LLM не запускается.
+        Stage 1 — раннее детство: LLM разрешена, но сильно упрощена.
+        Stage 2 — свободная речь: обычные ограничения.
+        """
+        import random
+
+        lower = config.SPEECH_STAGE_0_MAX_VOCAB
+        upper = config.SPEECH_STAGE_1_MAX_VOCAB
+        blend = max(1, config.SPEECH_STAGE_BLEND_WIDTH)
+
+        # --- Граница Stage 0 -> Stage 1 ---
+        if vocabulary_size < lower - blend:
+            return 0
+        if vocabulary_size < lower + blend:
+            progress = (vocabulary_size - (lower - blend)) / (2 * blend)
+            if random.random() >= progress:
+                return 0
+            # иначе "перескочили" границу — проверяем дальше, вдруг и
+            # вторая граница уже рядом (маловероятно, но не аварийно)
+
+        # --- Граница Stage 1 -> Stage 2 ---
+        if vocabulary_size < upper - blend:
+            return 1
+        if vocabulary_size < upper + blend:
+            progress = (vocabulary_size - (upper - blend)) / (2 * blend)
+            if random.random() >= progress:
+                return 1
+
+        return 2
+
+    def _resolve_max_tokens(self, vocabulary_size: int) -> int:
+        """
+        Континуальный (не ступенчатый) лимит длины ответа LLM — растёт
+        линейно с размером словаря от LLM_MAX_TOKENS_FLOOR до
+        config.LLM_MAX_TOKENS (потолок), насыщаясь при словаре размером
+        LLM_MAX_TOKENS_GROWTH_VOCAB. В отличие от _resolve_speech_stage
+        (дискретные стадии с зоной смешения), здесь нет ступеней вообще —
+        каждое усвоенное слово чуть-чуть увеличивает допустимую длину ответа.
+        """
+        floor = config.LLM_MAX_TOKENS_FLOOR
+        ceiling = config.LLM_MAX_TOKENS
+        growth_vocab = max(1, config.LLM_MAX_TOKENS_GROWTH_VOCAB)
+
+        progress = min(1.0, vocabulary_size / growth_vocab)
+        return int(floor + (ceiling - floor) * progress)
 
     def extract_concept(self, text: str) -> Optional[ConceptExtractionResult]:
         """

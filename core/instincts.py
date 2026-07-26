@@ -70,7 +70,12 @@ class InstinctSystem:
 
     def __init__(self):
         self.current_stress: float = 0.0
-        self._last_update: float = time.time()
+        # None -> лениво инициализируется значением timestamp (brain_time)
+        # первого реального вызова _apply_recovery(), чтобы избежать
+        # смешения доменов времени real time.time() / virtual brain_time
+        # (Фикс J: раньше здесь был time.time(), несовместимый с тем, что
+        # brain_time обычно ОПЕРЕЖАЕТ реальное время из-за TICK_SECONDS).
+        self._last_update: Optional[float] = None
         # Reinforcement Loop: context_key -> bias (-1.0..+1.0), где
         # положительный bias СНИЖАЕТ вероятность эхолалии, отрицательный —
         # ПОВЫШАЕТ (штраф за неудачную эхолалию в этом контексте).
@@ -80,8 +85,8 @@ class InstinctSystem:
     # Накопление / восстановление стресса
     # ----------------------------------------------------------------------
 
-    def accumulate_stress(self, intensity: float = 1.0) -> float:
-        self._apply_recovery()
+    def accumulate_stress(self, intensity: float = 1.0, timestamp: Optional[float] = None) -> float:
+        self._apply_recovery(timestamp)
 
         delta = max(0.0, intensity) * config.STRESS_ACCUMULATION_RATE
         self.current_stress = min(1.0, self.current_stress + delta)
@@ -94,8 +99,22 @@ class InstinctSystem:
         self._check_overload()
         return self.current_stress
 
-    def _apply_recovery(self) -> None:
-        now = time.time()
+    def _apply_recovery(self, timestamp: Optional[float] = None) -> None:
+        """
+        Продвигает восстановление стресса на основе ВИРТУАЛЬНОГО brain_time
+        (Фикс J), а не реального time.time() — иначе восстановление живёт
+        на другом временном масштабе, чем decay/boredom/edge decay, которые
+        все синхронно используют brain_time. timestamp=None (fallback на
+        time.time()) поддерживается только для вызовов без доступа к
+        brain_time — в проде main.py/brain_session.py всегда передают brain_time.
+        """
+        now = timestamp if timestamp is not None else time.time()
+
+        if self._last_update is None:
+            # Первый вызов — просто фиксируем точку отсчёта, без recovery.
+            self._last_update = now
+            return
+
         dt = now - self._last_update
         self._last_update = now
 
@@ -136,21 +155,21 @@ class InstinctSystem:
             )
         return is_overloaded
 
-    def is_overloaded(self) -> bool:
-        self._apply_recovery()
+    def is_overloaded(self, timestamp: Optional[float] = None) -> bool:
+        self._apply_recovery(timestamp)
         return self.current_stress > config.STRESS_OVERLOAD_THRESHOLD
 
-    def get_effective_plasticity_threshold(self) -> float:
-        self._apply_recovery()
+    def get_effective_plasticity_threshold(self, timestamp: Optional[float] = None) -> float:
+        self._apply_recovery(timestamp)
         modifier = self.current_stress * config.PLASTICITY_STRESS_MODIFIER
         return min(1.0, config.BASE_PLASTICITY_THRESHOLD + modifier)
 
-    def get_state(self) -> InstinctState:
-        self._apply_recovery()
+    def get_state(self, timestamp: Optional[float] = None) -> InstinctState:
+        self._apply_recovery(timestamp)
         return InstinctState(
             current_stress=self.current_stress,
             is_overloaded=self.current_stress > config.STRESS_OVERLOAD_THRESHOLD,
-            effective_plasticity_threshold=self.get_effective_plasticity_threshold(),
+            effective_plasticity_threshold=self.get_effective_plasticity_threshold(timestamp),
         )
 
     # ----------------------------------------------------------------------
@@ -170,7 +189,12 @@ class InstinctSystem:
         logger.info("[INSTINCT: ECHOLALIA] Мимикрия сработала -> %r", response[:60])
         return response
 
-    def should_use_echolalia(self, confidence: float, context_key: Optional[str] = None) -> bool:
+    def should_use_echolalia(
+        self,
+        confidence: float,
+        context_key: Optional[str] = None,
+        timestamp: Optional[float] = None,
+    ) -> bool:
         """
         Определяет, стоит ли использовать эхолалию, комбинируя:
             - вероятностный порог ECHOLALIA_PROBABILITY
@@ -183,14 +207,14 @@ class InstinctSystem:
         """
         import random
 
-        if self.is_overloaded():
+        if self.is_overloaded(timestamp):
             return True
 
         bias = self._echolalia_bias.get(self._normalize_key(context_key), 0.0) if context_key else 0.0
 
         if confidence < config.CONFIDENCE_FALLBACK_THRESHOLD:
             effective_probability = max(0.0, min(1.0, config.ECHOLALIA_PROBABILITY - bias))
-            return random.random() < effective_probability or True
+            return random.random() < effective_probability
 
         # Даже при высокой уверенности сильный негативный bias (штраф за
         # неудачную эхолалию раньше) не должен внезапно включать эхолалию —
