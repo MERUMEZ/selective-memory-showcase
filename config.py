@@ -350,7 +350,7 @@ SLEEP_CONSOLIDATION_PROMPT = _get_str(
 # Автоматический триггер фазы сна: если общее количество узлов LTM
 # превышает это значение — main.py может предложить/запустить /sleep
 # автоматически (используется как порог "переполнения памяти")
-SLEEP_AUTO_TRIGGER_NODE_COUNT = _get_int("SLEEP_AUTO_TRIGGER_NODE_COUNT", 50)
+SLEEP_AUTO_TRIGGER_NODE_COUNT = _get_int("SLEEP_AUTO_TRIGGER_NODE_COUNT", 150)
 
 
 # ==========================================================================
@@ -565,7 +565,7 @@ SYLLABLE_NODE_INITIAL_WEIGHT = _get_float("SYLLABLE_NODE_INITIAL_WEIGHT", 0.10)
 SYLLABLE_NODE_REINFORCE_STEP = _get_float("SYLLABLE_NODE_REINFORCE_STEP", 0.03)
 
 # Вес ребра "слог входит в состав слова" при связывании syllable <-> word
-SYLLABLE_WORD_EDGE_WEIGHT = _get_float("SYLLABLE_WORD_EDGE_WEIGHT", 0.30)
+SYLLABLE_WORD_EDGE_WEIGHT = _get_float("SYLLABLE_WORD_EDGE_WEIGHT", 0.45)
 
 # Вес ребра со-встречаемости соседних слов в пределах одного сообщения
 # (word[i] <-> word[i+1]) — примитивная "грамматика по смежности"
