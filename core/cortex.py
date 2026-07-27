@@ -61,7 +61,7 @@ class CortexResponse:
     text: str
     confidence: float
     perplexity: float
-    source: str  # "memory_recall" | "echolalia" | "babbling" | "generation"
+    source: str  # "memory_recall" | "echolalia" | "babbling" | "blended_mimicry" | "generation"
     prompt_context: Optional[str] = None
     activation_traces: Optional[list] = None
     mood_state: Optional[MoodState] = None
@@ -96,7 +96,7 @@ class ActionTrace:
     user_input: str
     bot_output: str
     node_id: Optional[int]
-    action_type: str  # "echolalia" | "llm_generation" | "memory_retrieval" | "babbling"
+    action_type: str  # "echolalia" | "llm_generation" | "memory_retrieval" | "babbling" | "blended_mimicry"
     node_ids: Optional[List[int]] = None
 
 
@@ -268,7 +268,7 @@ class Cortex:
                 reason,
             )
             return self._generate_mimicry_response(
-                text, confidence, perplexity, mood_state, vocabulary_size
+                text, confidence, perplexity, mood_state, vocabulary_size, timestamp=timestamp
             )
 
         stm_context = self.stm.get_context_string()
@@ -346,7 +346,7 @@ class Cortex:
             # vocabulary_size уже посчитан выше (в едином гейте перед search()) —
             # переиспользуем его вместо повторного запроса к БД.
             return self._generate_mimicry_response(
-                text, confidence, perplexity, mood_state, vocabulary_size
+                text, confidence, perplexity, mood_state, vocabulary_size, timestamp=timestamp
             )
 
         # --- Шаг 3: MEMORY MISS + уверенность достаточна -> LLM + STM-контекст ---
@@ -645,7 +645,7 @@ class Cortex:
                     )
                 effect = "rewarded"
 
-            elif trace.action_type == "babbling" and trace.node_ids:
+            elif trace.action_type in ("babbling", "blended_mimicry") and trace.node_ids:
                 # Позитивный фидбэк на лепет: усиливаем КАЖДЫЙ задействованный
                 # слог (он оказался "удачным" в этой комбинации) и укрепляем
                 # ассоциативные рёбра МЕЖДУ ними — успешная комбинация слогов
@@ -671,7 +671,7 @@ class Cortex:
                 if effect == "neutral":
                     effect = "bias_adjusted"
 
-            if trace.action_type != "babbling":
+            if trace.action_type not in ("babbling", "blended_mimicry"):
                 logger.info(
                     "[REWARD EVAL] Feedback Valence: +%.2f -> Rewarding Node ID: %s",
                     valence, trace.node_id,
@@ -684,7 +684,7 @@ class Cortex:
                 applied_delta = -penalty
                 effect = "penalized"
 
-            elif trace.action_type == "babbling" and trace.node_ids:
+            elif trace.action_type in ("babbling", "blended_mimicry") and trace.node_ids:
                 # Негативный фидбэк на лепет: штрафуем КАЖДЫЙ задействованный
                 # слог этой конкретной неудачной комбинации — она станет
                 # реже выбираться при следующей взвешенной выборке
@@ -700,14 +700,14 @@ class Cortex:
                     valence, trace.node_ids,
                 )
 
-            if trace.action_type == "echolalia":
+            if trace.action_type in ("echolalia", "blended_mimicry"):
                 # Эхолалия оказалась неудачной в этом контексте -> повышаем
                 # штраф на эхолалию для похожего ввода на будущее.
                 self.instincts.adjust_echolalia_bias(context_key, delta=-abs(config.ECHOLALIA_BIAS_STEP))
                 if effect == "neutral":
                     effect = "bias_adjusted"
 
-            if trace.action_type != "babbling":
+            if trace.action_type not in ("babbling", "blended_mimicry"):
                 logger.info(
                     "[REWARD EVAL] Feedback Valence: %.2f -> Penalizing Node ID: %s",
                     valence, trace.node_id,
@@ -916,44 +916,39 @@ class Cortex:
         perplexity: float,
         mood_state: Optional[MoodState],
         vocabulary_size: int,
+        timestamp: Optional[float] = None,
     ) -> CortexResponse:
         """
         Единая точка генерации защитной/довербальной мимикрии — используется
         и при принудительном гейте (перегрузка стрессом / Stage 0, ДО поиска
         по LTM), и при обычном срабатывании should_use_echolalia() после
-        MEMORY MISS. Внутри выбирает между babbling (если словарь мал
-        настолько, что should_babble() решает попробовать лепет) и обычной
-        эхолалией (fallback, если известных слогов недостаточно).
+        MEMORY MISS.
 
-        Раньше эта логика была продублирована в 3 местах — риск того, что
-        правка одной копии не попадёт в остальные и поведение расходится.
+        В отличие от прежней версии (жёсткий выбор: ЛИБО чистый babbling,
+        ЛИБО чистая эхолалия), теперь используется
+        InstinctSystem.generate_blended_mimicry_response() — она СМЕШИВАЕТ
+        лепет и эхо реальных слов юзера в ОДНОЙ реплике по континуальной
+        доле (babble_ratio), которая плавно убывает с ростом словаря и
+        резко растёт при перегрузке стрессом (регрессия к более ранней
+        стадии речи под давлением) — как у настоящего ребёнка, без резких
+        переключений между стадиями речевого развития.
         """
-        if self.instincts.should_babble(vocabulary_size):
-            known_syllables = self.memory.get_known_syllables()
-            babble_result = self.instincts.generate_babble_response(known_syllables)
-            if babble_result.text:
-                self._record_action_trace(
-                    text, babble_result.text,
-                    node_id=None,
-                    action_type="babbling",
-                    node_ids=babble_result.used_node_ids,
-                )
-                return CortexResponse(
-                    text=babble_result.text,
-                    confidence=confidence,
-                    perplexity=perplexity,
-                    source="babbling",
-                    mood_state=mood_state,
-                )
-            # known_syllables недостаточно -> проваливаемся в обычную эхолалию ниже
+        known_syllables = self.memory.get_known_syllables()
+        blend_result = self.instincts.generate_blended_mimicry_response(
+            text, known_syllables, vocabulary_size, timestamp=timestamp,
+        )
 
-        echo_text = self.instincts.generate_echolalia_response(text)
-        self._record_action_trace(text, echo_text, node_id=None, action_type="echolalia")
+        self._record_action_trace(
+            text, blend_result.text,
+            node_id=None,
+            action_type="blended_mimicry",
+            node_ids=blend_result.used_node_ids or None,
+        )
         return CortexResponse(
-            text=echo_text,
+            text=blend_result.text,
             confidence=confidence,
             perplexity=perplexity,
-            source="echolalia",
+            source="blended_mimicry",
             mood_state=mood_state,
         )
 

@@ -24,7 +24,7 @@ user_input. Позитивный фидбэк на успешную смысло
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import config
 from storage.utils.logger import get_logger
@@ -271,6 +271,101 @@ class InstinctSystem:
             return False
 
         return random.random() < config.BABBLING_PROBABILITY
+
+    def get_babble_ratio(self, vocabulary_size: int, timestamp: Optional[float] = None) -> float:
+        """
+        Continuous доля "лепетного" поведения в смешанном ответе, [0.0, 1.0]:
+        - 1.0 при vocabulary_size около 0 (чистый довербальный лепет)
+        - плавно убывает к 0.0 в полосе шириной MIMICRY_BLEND_WIDTH вокруг
+          BABBLING_VOCABULARY_THRESHOLD (без резкого переключения)
+        - перегрузка стрессом добавляет бонус — регрессия к более ранней
+          стадии речи даже при большом словаре (как у настоящих детей).
+        """
+        threshold = config.BABBLING_VOCABULARY_THRESHOLD
+        blend = max(1.0, config.MIMICRY_BLEND_WIDTH)
+        base_ratio = (threshold + blend - vocabulary_size) / (2 * blend)
+        base_ratio = max(0.0, min(1.0, base_ratio))
+        if self.is_overloaded(timestamp):
+            base_ratio = min(1.0, base_ratio + config.STRESS_REGRESSION_BABBLE_BONUS)
+        return base_ratio
+
+    def _make_babble_words(
+        self, known_syllables: List["KnownSyllable"], n_words: int
+    ) -> Tuple[List[str], List[int]]:
+        """Общая внутренняя логика генерации n_words лепетных слов из известных слогов."""
+        import random
+        weights = [max(0.01, s.weight) for s in known_syllables]
+        words: List[str] = []
+        used_ids: List[int] = []
+        for _ in range(n_words):
+            syllable_count = random.randint(
+                config.BABBLING_MIN_SYLLABLES, config.BABBLING_MAX_SYLLABLES
+            )
+            chosen = random.choices(known_syllables, weights=weights, k=syllable_count)
+            words.append("".join(c.text for c in chosen))
+            used_ids.extend(c.id for c in chosen)
+        return words, used_ids
+
+    def generate_blended_mimicry_response(
+        self,
+        input_text: str,
+        known_syllables: List["KnownSyllable"],
+        vocabulary_size: int,
+        timestamp: Optional[float] = None,
+    ) -> BabbleResult:
+        """
+        Единая реалистичная генерация защитной/довербальной мимикрии:
+        смешивает лепет и эхо реальных слов юзера В ОДНОЙ реплике, без
+        резкого переключения между "чистый лепет" и "чистое эхо" — как
+        у настоящего ребёнка на переходных стадиях речевого развития
+        (например: "мама... [лепет] дай!" — одно реальное услышанное
+        слово вперемешку со слогами).
+
+        Доля лепета (babble_ratio) непрерывно убывает по мере роста
+        словаря и резко возрастает при перегрузке стрессом (регрессия).
+        Заменяет прежний жёсткий выбор should_babble() -> babble ИЛИ
+        обычная эхолалия (fallback).
+        """
+        import random
+
+        babble_ratio = self.get_babble_ratio(vocabulary_size, timestamp)
+
+        if len(known_syllables) < config.BABBLING_MIN_KNOWN_SYLLABLES:
+            # Физически нечем лепетать -> остаётся только эхо-компонента
+            babble_ratio = 0.0
+
+        user_words = [w for w in input_text.strip().split() if w]
+
+        echoed_words: List[str] = []
+        if user_words and babble_ratio < 1.0:
+            max_echo = max(
+                1, round(len(user_words) * (1.0 - babble_ratio) * config.BLENDED_ECHO_WORD_RATIO)
+            )
+            n_echo = min(max_echo, len(user_words))
+            echoed_words = random.sample(user_words, k=n_echo)
+
+        babble_words: List[str] = []
+        used_ids: List[int] = []
+        if babble_ratio > 0.0 and len(known_syllables) >= config.BABBLING_MIN_KNOWN_SYLLABLES:
+            n_babble_words = max(1, round(config.BABBLING_WORDS_PER_RESPONSE * babble_ratio))
+            babble_words, used_ids = self._make_babble_words(known_syllables, n_babble_words)
+
+        fragments = echoed_words + babble_words
+        random.shuffle(fragments)
+
+        if not fragments:
+            # Нечем ни лепетать, ни повторить (пустой вход и нет слогов)
+            # -> откат на стандартную эхолалию как последний fallback.
+            text = self.generate_echolalia_response(input_text)
+        else:
+            text = " ".join(fragments)
+
+        logger.info(
+            "[INSTINCT: BLENDED MIMICRY] ratio=%.2f echo_words=%d babble_words=%d -> %r",
+            babble_ratio, len(echoed_words), len(babble_words), text[:60],
+        )
+
+        return BabbleResult(text=text, used_node_ids=list(dict.fromkeys(used_ids)))
 
     def generate_babble_response(self, known_syllables: List["KnownSyllable"]) -> BabbleResult:
         """
