@@ -870,7 +870,7 @@ class Cortex:
     def _build_stage_constraint_block(self, speech_stage: int) -> str:
         """
         Возвращает доп. блок инструкции для промпта в зависимости от стадии
-        речевого развития (см. _resolve_speech_stage). Stage 2 — без
+        речевого развития (см. _resolve_speech_stage). Stage 3 — без
         дополнительных ограничений (пустая строка). Stage 0 сюда не должен
         попадать вообще — гейт в generate_response() перехватывает его
         раньше и не доходит до построения промпта.
@@ -881,6 +881,13 @@ class Cortex:
                 "фразами. Отвечай ОДНИМ простым предложением, без сложных "
                 "терминов, метафор и абстракций. Говори так, как говорит "
                 "маленький ребёнок, который только выучил базовые слова."
+            )
+        if speech_stage == 2:
+            return (
+                "\n\n[ОГРАНИЧЕНИЕ РЕЧИ] Ты уже строишь простые фразы, но ещё "
+                "не оперируешь абстракциями, метафорами и сложными причинно-"
+                "следственными объяснениями. Отвечай 1-2 короткими простыми "
+                "предложениями, используя только конкретные, понятные слова."
             )
         return ""
 
@@ -954,40 +961,42 @@ class Cortex:
 
     def _resolve_speech_stage(self, vocabulary_size: int) -> int:
         """
-        Определяет текущую стадию речевого развития по размеру словаря,
-        с вероятностной "зоной смешения" на границах — вместо резкого
-        переключения, шанс перейти на следующую стадию линейно растёт
-        внутри полосы шириной SPEECH_STAGE_BLEND_WIDTH вокруг границы.
+        Определяет текущую стадию речевого развития по размеру ЗАКРЕПЛЁННОГО
+        словаря (см. MemoryGraph.get_vocabulary_size), с вероятностной
+        "зоной смешения" на каждой границе — вместо резкого переключения,
+        шанс перейти на следующую стадию линейно растёт внутри полосы
+        шириной SPEECH_STAGE_BLEND_WIDTH вокруг границы.
 
         Stage 0 — довербальный: только лепет/эхолалия, LLM не запускается.
-        Stage 1 — раннее детство: LLM разрешена, но сильно упрощена.
-        Stage 2 — свободная речь: обычные ограничения.
+        Stage 1 — телеграфная речь: LLM разрешена, но ОДНО простое предложение.
+        Stage 2 — простая грамматика: 1-2 предложения, без абстракций/метафор.
+        Stage 3 — свободная речь: обычные ограничения.
+
+        Реализовано как обход границ по порядку: на каждой границе либо
+        остаёмся на текущей стадии (детерминированно ниже зоны смешения,
+        либо не "выпал" бросок внутри зоны), либо переходим дальше и
+        проверяем следующую границу — что естественно обобщает попарную
+        проверку на произвольное число стадий.
         """
         import random
 
-        lower = config.SPEECH_STAGE_0_MAX_VOCAB
-        upper = config.SPEECH_STAGE_1_MAX_VOCAB
+        boundaries = [
+            config.SPEECH_STAGE_0_MAX_VOCAB,
+            config.SPEECH_STAGE_1_MAX_VOCAB,
+            config.SPEECH_STAGE_2_MAX_VOCAB,
+        ]
         blend = max(1, config.SPEECH_STAGE_BLEND_WIDTH)
 
-        # --- Граница Stage 0 -> Stage 1 ---
-        if vocabulary_size < lower - blend:
-            return 0
-        if vocabulary_size < lower + blend:
-            progress = (vocabulary_size - (lower - blend)) / (2 * blend)
-            if random.random() >= progress:
-                return 0
-            # иначе "перескочили" границу — проверяем дальше, вдруг и
-            # вторая граница уже рядом (маловероятно, но не аварийно)
-
-        # --- Граница Stage 1 -> Stage 2 ---
-        if vocabulary_size < upper - blend:
-            return 1
-        if vocabulary_size < upper + blend:
-            progress = (vocabulary_size - (upper - blend)) / (2 * blend)
-            if random.random() >= progress:
-                return 1
-
-        return 2
+        stage = 0
+        for boundary in boundaries:
+            if vocabulary_size < boundary - blend:
+                break
+            if vocabulary_size < boundary + blend:
+                progress = (vocabulary_size - (boundary - blend)) / (2 * blend)
+                if random.random() >= progress:
+                    break
+            stage += 1
+        return stage
 
     def _resolve_max_tokens(self, vocabulary_size: int) -> int:
         """

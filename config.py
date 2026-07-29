@@ -455,6 +455,8 @@ TABULA_RASA_PROMPT_TEMPLATE = _get_str(
     "- У тебя нет готовых энциклопедических знаний из интернета. Если "
     "информация о понятии отсутствует в памяти, признайся, что не знаешь "
     "его, или спроси у Юзера.\n"
+    "- Отвечай ТОЛЬКО на русском языке, независимо от языка, на котором "
+    "написано сообщение пользователя или память.\n"
     "- Отвечай естественно, опираясь на свой текущий образ из Self-Model."
 )
 
@@ -608,16 +610,27 @@ BABBLING_SYLLABLE_POOL_SIZE = _get_int("BABBLING_SYLLABLE_POOL_SIZE", 30)
 # ==========================================================================
 # 17b. SPEECH STAGE GATING — стадии речевого развития (continuous, с зоной смешения)
 # ==========================================================================
+# Порог веса word-узла, начиная с которого слово считается ЗАКРЕПЛЁННЫМ
+# ("усвоенным"), а не просто разово услышанным. Новый word-узел создаётся
+# с весом WORD_NODE_INITIAL_WEIGHT (0.12) и растёт на WORD_NODE_REINFORCE_STEP
+# (0.04) при каждом повторном появлении слова — порог 0.20 соответствует
+# ~3 употреблениям слова пользователем. Используется в
+# MemoryGraph.get_vocabulary_size() для гейтинга речевых стадий: без этого
+# порога слово, услышанное один раз, немедленно засчитывалось бы в
+# vocabulary_size, хотя реального освоения языка ещё не произошло.
+VOCABULARY_MASTERY_MIN_WEIGHT = _get_float("VOCABULARY_MASTERY_MIN_WEIGHT", 0.20)
 # Stage 0 (довербальный): vocab < SPEECH_STAGE_0_MAX_VOCAB -> только лепет/эхолалия,
 # LLM и поиск по LTM не запускаются вообще.
 SPEECH_STAGE_0_MAX_VOCAB = _get_int("SPEECH_STAGE_0_MAX_VOCAB", 50)
-
-# Stage 1 (раннее детство): vocab < SPEECH_STAGE_1_MAX_VOCAB -> LLM разрешена,
-# но с усиленными ограничениями простоты речи (короткие фразы, без абстракций).
+# Stage 1 (раннее детство/телеграфная речь): vocab < SPEECH_STAGE_1_MAX_VOCAB ->
+# LLM разрешена, но только ОДНО простое предложение, без абстракций.
 SPEECH_STAGE_1_MAX_VOCAB = _get_int("SPEECH_STAGE_1_MAX_VOCAB", 300)
-
-# Stage 2 (свободная речь): vocab >= SPEECH_STAGE_1_MAX_VOCAB -> обычные ограничения.
-
+# Stage 2 (простая грамматика): vocab < SPEECH_STAGE_2_MAX_VOCAB -> разрешено
+# 1-2 предложения и простые связки, но БЕЗ метафор/абстракций/сложных
+# причинно-следственных объяснений — промежуточная ступень между
+# "телеграфной" речью и полностью свободной.
+SPEECH_STAGE_2_MAX_VOCAB = _get_int("SPEECH_STAGE_2_MAX_VOCAB", 800)
+# Stage 3 (свободная речь): vocab >= SPEECH_STAGE_2_MAX_VOCAB -> обычные ограничения.
 # Ширина зоны смешения вокруг каждой границы (в узлах словаря). Внутри этой
 # зоны переход происходит ВЕРОЯТНОСТНО (линейно растущий шанс), а не резко.
 SPEECH_STAGE_BLEND_WIDTH = _get_int("SPEECH_STAGE_BLEND_WIDTH", 15)
@@ -697,6 +710,32 @@ SESSION_EVICTION_IDLE_SECONDS = _get_float("SESSION_EVICTION_IDLE_SECONDS", 3600
 # idle-sleep/boredom-триггеры (замена _idle_sleep_background_loop из main.py,
 # но один таск на ВСЕ сессии вместо потока на каждую).
 BOT_SCHEDULER_TICK_SECONDS = _get_float("BOT_SCHEDULER_TICK_SECONDS", 5.0)
+
+
+# ==========================================================================
+# 20. BILLING — подписка через Telegram Stars (Free/Premium тарифы)
+# ==========================================================================
+# Отдельная SQLite БД (НЕ per-user brain.db!) — платёжные данные не должны
+# смешиваться с когнитивными данными пользователя: разные жизненные циклы,
+# разные требования к консистентности (см. audit.txt, раздел B).
+BILLING_DB_PATH = _get_str("BILLING_DB_PATH", str(STORAGE_DIR / "billing.db"))
+
+# Сколько обычных текстовых сообщений в сутки (UTC) доступно бесплатному
+# пользователю без Premium-подписки. Считается через QuotaMiddleware.
+FREE_TIER_DAILY_MESSAGE_LIMIT = _get_int("FREE_TIER_DAILY_MESSAGE_LIMIT", 30)
+
+# Тарифы Premium-подписки в Telegram Stars (валюта "XTR", встроенная,
+# без внешнего платёжного провайдера).
+PREMIUM_STARS_PRICE_30D = _get_int("PREMIUM_STARS_PRICE_30D", 150)
+PREMIUM_DAYS_30D = _get_int("PREMIUM_DAYS_30D", 30)
+PREMIUM_STARS_PRICE_90D = _get_int("PREMIUM_STARS_PRICE_90D", 400)
+PREMIUM_DAYS_90D = _get_int("PREMIUM_DAYS_90D", 90)
+
+# /sleep дёргает LLM (SLEEP_CONSOLIDATION_PROMPT + SELF_MODEL_EVOLUTION_PROMPT),
+# поэтому по умолчанию считаем его в тот же дневной лимит, что и обычные
+# сообщения — иначе бесплатный пользователь мог бы обходить лимит, вызывая
+# /sleep вместо обычных сообщений.
+BILLING_GATE_SLEEP_COMMAND = _get_str("BILLING_GATE_SLEEP_COMMAND", "true").lower() == "true"
 
 
 # ==========================================================================

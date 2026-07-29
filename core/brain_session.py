@@ -49,6 +49,27 @@ class BrainResponse:
     debug: dict = field(default_factory=dict)
 
 
+@dataclass
+class BrainIdleEvent:
+    """
+    Результат одного фонового idle-тика (см. BrainSession.run_idle_tick),
+    сигнализирующий вызывающему коду (bot.py — фоновый asyncio-scheduler),
+    что нужно что-то сделать во внешнем мире (или просто залогировать).
+
+    kind="sleep"      -> автоматический Idle Sleep был выполнен; text
+                         содержит технический отчёт (to_report_string()),
+                         НЕ предназначенный для отправки пользователю в
+                         Telegram — вызывающий код должен только залогировать
+                         это событие, а не слать report юзеру как сообщение.
+    kind="proactive"  -> сгенерировано настоящее проактивное сообщение
+                         (Boredom Drive Trigger) — text нужно отправить
+                         пользователю как обычное сообщение от бота.
+    """
+    kind: str  # "sleep" | "proactive"
+    text: str
+    source_node_id: Optional[int] = None
+
+
 class SharedActivationState:
     """
     Потокобезопасный контейнер для last_active_node_id и окна со-активации
@@ -411,14 +432,86 @@ class BrainSession:
         return BrainResponse(text=response_text, is_sleep_report=False, debug=debug)
 
     # ----------------------------------------------------------------------
-    # Обслуживание фонового "тика" (заготовка для Этапа 5 — Idle/Boredom).
-    # Пока НЕ вызывается автоматически, доступно для точечных вызовов из
-    # тест-скрипта, если потребуется проверить advance_by/boredom вручную.
+    # Обслуживание фонового "тика" (Этап 5 — Idle Sleep / Boredom).
+    # Вызывается извне (bot.py::_idle_scheduler_loop) через asyncio.to_thread
+    # на каждой итерации ЕДИНОГО фонового asyncio-таска для ВСЕХ сессий —
+    # синхронный метод, т.к. внутри блокирующие SQLite-запросы и, при
+    # срабатывании boredom, блокирующий HTTP-вызов к LLM.
     # ----------------------------------------------------------------------
 
-    def advance_idle_tick(self, delta_seconds: float) -> float:
-        """Продвигает brain_time на delta_seconds без сообщения пользователя."""
-        return self.clock.advance_by(delta_seconds)
+    def run_idle_tick(self, delta_seconds: float) -> Optional[BrainIdleEvent]:
+        """
+        Синхронный аналог тела _idle_sleep_background_loop из main.py,
+        но для ОДНОЙ сессии и без прямого print()/консольного вывода —
+        вместо этого возвращает BrainIdleEvent (или None), который
+        вызывающий код (bot.py) сам решает, отправлять ли пользователю.
+
+        Продвигает brain_time на delta_seconds (реальные секунды,
+        прошедшие с прошлой итерации фонового scheduler'а — см.
+        config.BOT_SCHEDULER_TICK_SECONDS) и проверяет два условия
+        по очереди:
+
+            1. AWAKE и Δt с последнего сообщения/активности пользователя
+               >= IDLE_SLEEP_THRESHOLD_SECONDS -> запускает
+               run_sleep_cycle(), переводит BoredomDrive в SLEEPING.
+               Возвращает BrainIdleEvent(kind="sleep").
+            2. SLEEPING -> пересчитывает boredom; при достижении
+               BOREDOM_THRESHOLD -> выбирает узел (select_proactive_node),
+               генерирует проактивное сообщение через cortex (LLM).
+               Возвращает BrainIdleEvent(kind="proactive") при успехе,
+               либо None при graceful degradation (LLM недоступна) —
+               система остаётся в SLEEPING, попытка повторится на
+               следующем boredom-тике.
+
+        В остальных случаях (ничего не произошло) возвращает None.
+        """
+        brain_time = self.clock.advance_by(delta_seconds)
+        idle_seconds = self.clock.seconds_since_last_activity()
+
+        if self.boredom_drive.is_awake() and idle_seconds >= config.IDLE_SLEEP_THRESHOLD_SECONDS:
+            logger.info(
+                "[IDLE SLEEP] db_path=%s: бездействие %.1fs >= %.1fs -> запуск фазы сна",
+                self.db_path, idle_seconds, config.IDLE_SLEEP_THRESHOLD_SECONDS,
+            )
+            sleep_summary = self.sleep_cycle.run_sleep_cycle(timestamp=brain_time)
+            self.activation_state.clear_window()
+            self.boredom_drive.enter_sleeping(brain_time)
+            return BrainIdleEvent(kind="sleep", text=sleep_summary.to_report_string())
+
+        if self.boredom_drive.is_sleeping():
+            snapshot = self.boredom_drive.update(brain_time)
+            logger.debug(
+                "[BOREDOM] db_path=%s state=%s boredom=%.3f (t_sleep=%.1fs)",
+                self.db_path, snapshot.state.value, snapshot.boredom, snapshot.seconds_since_sleep_start,
+            )
+
+            if snapshot.boredom >= config.BOREDOM_THRESHOLD:
+                last_node_id = self.activation_state.get_last_active()
+                node = self.memory.select_proactive_node(
+                    last_active_node_id=last_node_id,
+                    brain_time=brain_time,
+                )
+                proactive_message = self.cortex.generate_proactive_message(node, timestamp=brain_time)
+
+                if proactive_message is not None:
+                    self.boredom_drive.trigger_proactive()
+                    logger.info(
+                        "[PROACTIVE MESSAGE] db_path=%s source_node_id=%s",
+                        self.db_path, proactive_message.source_node_id,
+                    )
+                    return BrainIdleEvent(
+                        kind="proactive",
+                        text=proactive_message.text,
+                        source_node_id=proactive_message.source_node_id,
+                    )
+
+                logger.warning(
+                    "[PROACTIVE FALLBACK] db_path=%s: не удалось сгенерировать "
+                    "проактивное сообщение (LLM недоступна) — остаёмся в SLEEPING",
+                    self.db_path,
+                )
+
+        return None
 
     def close(self) -> None:
         """Освобождает ресурсы (закрывает соединение с БД через Cortex)."""
