@@ -33,7 +33,7 @@ from collections import deque
 from typing import List, Optional
 from core.amygdala import Amygdala
 from core.instincts import InstinctSystem
-from core.mood import Mood, MoodDelta, MoodState
+from core.mood import Appraisal, Mood, MoodState
 from memory.graph_memory import MemoryGraph, MemoryMatch, ProactiveCandidate
 from memory.working_memory import WorkingMemory
 from services.llm import generate_llm_response
@@ -224,7 +224,15 @@ class Cortex:
 
         # Новизна/неожиданность сигнала слегка подстёгивает любопытство
         # в векторе настроения (тихо, без лишнего лога на каждую реплику).
-        mood_state = self.mood.apply_stimulus(MoodDelta(curiosity=perplexity * 0.15), log=False)
+        # Настроение — ОЦЕНКА события, а не назначенный стимул. На входящей
+        # реплике организм оценивает её новизну (та самая ошибка предсказания
+        # входа) и свою способность справиться. Непонятное интересно, лишь
+        # пока есть ресурс это переварить; при перегрузке та же новизна даёт
+        # тревогу, а не любопытство.
+        coping = 1.0 - self.instincts.get_state(timestamp=timestamp).current_stress
+        mood_state = self.mood.appraise(
+            Appraisal(novelty=perplexity, coping=coping), log=False
+        )
 
         # --- CONCEPT EXTRACTION: побочный эффект, не блокирует основной поток ---
         concept_result = self.extract_concept(text)
@@ -613,7 +621,12 @@ class Cortex:
         # Обновляем вектор настроения на основе валентности фидбека —
         # положительный отклик наставника поднимает joy/affection,
         # негативный — anxiety.
-        mood_state = self.mood.apply_feedback(feedback_valence=valence)
+        # Радость идёт от ОШИБКИ предсказания награды, а не от самой похвалы.
+        # Привычное одобрение перестаёт радовать — ровно как в жизни, и ровно
+        # как габитуирует дофаминовый сигнал (см. MemoryGraph.apply_reward).
+        # Само вычисление rpe чуть ниже, поэтому настроение обновляется после
+        # него — здесь только берётся сильнейший из сигналов действия.
+        mood_state: Optional[MoodState] = None
 
         applied_delta = 0.0
 
@@ -634,6 +647,23 @@ class Cortex:
         learning_scale = (
             max(self.memory.learning_scale(s.prediction_error) for s in reward_signals)
             if reward_signals else 1.0
+        )
+
+        # Эмоция строится на ошибке предсказания, а не на сырой валентности.
+        # Если действие не опиралось ни на один узел (например, чистая
+        # генерация LLM), ожидать было нечему — тогда неожиданностью
+        # считается сама оценка.
+        if reward_signals:
+            congruence = max(
+                (s.prediction_error for s in reward_signals), key=abs,
+            )
+        else:
+            congruence = valence
+        mood_state = self.mood.appraise(
+            Appraisal(
+                goal_congruence=congruence,
+                coping=1.0 - self.instincts.get_state(timestamp=timestamp).current_stress,
+            )
         )
 
         if valence > 0:

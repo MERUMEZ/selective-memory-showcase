@@ -65,6 +65,31 @@ class MoodDelta:
 
 
 @dataclass
+class Appraisal:
+    """
+    Оценка события по измерениям теории оценки — то, ИЗ ЧЕГО организм
+    строит эмоцию, вместо назначения её руками.
+
+    Все три величины он уже вычисляет для других нужд, так что эмоция
+    становится ЧТЕНИЕМ собственного состояния, а не отдельной подсистемой
+    с подобранными коэффициентами:
+
+    novelty         [0..1]  насколько событие неожиданно —
+                            MemoryGraph.compute_surprise (ошибка
+                            предсказания входа);
+    goal_congruence [-1..1] лучше или хуже ожидаемого всё вышло —
+                            ошибка предсказания награды (дофамин).
+                            Именно ОШИБКА, а не сама валентность:
+                            привычная похвала не должна радовать;
+    coping          [0..1]  насколько организм справляется —
+                            1 - current_stress (InstinctSystem).
+    """
+    novelty: float = 0.0
+    goal_congruence: float = 0.0
+    coping: float = 1.0
+
+
+@dataclass
 class MoodState:
     """Иммутабельный снимок вектора настроения в конкретный момент."""
     joy: float
@@ -140,8 +165,17 @@ class Mood:
         prompt_block = mood.get_state().describe_for_prompt()
     """
 
-    def __init__(self, decay_rate: Optional[float] = None):
+    def __init__(
+        self,
+        decay_rate: Optional[float] = None,
+        affection_decay_rate: Optional[float] = None,
+    ):
         self.decay_rate = decay_rate if decay_rate is not None else _DEFAULT_DECAY_RATE
+        self.affection_decay_rate = (
+            affection_decay_rate
+            if affection_decay_rate is not None
+            else getattr(config, "MOOD_AFFECTION_DECAY_RATE", 0.02)
+        )
 
         self.joy = BASELINE_JOY
         self.curiosity = BASELINE_CURIOSITY
@@ -172,34 +206,44 @@ class Mood:
 
         return state
 
-    def apply_feedback(
-        self,
-        feedback_valence: float = 0.0,
-        emotion_score: float = 0.0,
-        perplexity: float = 0.0,
-        log: bool = True,
-    ) -> MoodState:
+    def appraise(self, appraisal: Appraisal, log: bool = True) -> MoodState:
         """
-        Удобный хелпер, транслирующий сигналы, уже используемые в
-        существующем пайплайне (Amygdala.detect_feedback_valence,
-        Perception.emotion_score, Cortex.calculate_perplexity), в
-        MoodDelta и применяющий его к вектору настроения.
+        Строит эмоцию как ОЦЕНКУ события, а не назначает её руками.
 
-        Эвристика:
-            - perplexity (новизна/неожиданность) -> поднимает curiosity.
-            - позитивная valence (одобрение наставника) -> поднимает joy
-              и affection.
-            - негативная valence (порицание) / высокий emotion_score без
-              позитивной valence -> поднимает anxiety.
+        Заменяет прежний apply_feedback, где коэффициенты (0.4, 0.3, 0.35,
+        0.1) не следовали ни из чего и не были ни на чём измерены. Здесь
+        структура связей взята из теории оценки, а из конфига приходит
+        только чувствительность осей:
+
+            любопытство = новизна * способность справиться
+                Непонятное интересно, лишь пока есть ресурс это переварить.
+                Та же новизна при перегрузке даёт не интерес, а тревогу —
+                поэтому coping стоит множителем, а не слагаемым.
+
+            радость = положительная ошибка предсказания награды
+                Именно ОШИБКА: привычная похвала перестаёт радовать, как и
+                в жизни. Организм не залипает на одном удачном слове.
+
+            тревога = отрицательная ошибка предсказания
+                      + новизна, с которой нечем справиться
+
+            привязанность = медленное накопление от подтверждённых ожиданий
+                Связь, а не вспышка: и растёт медленнее (MOOD_AFFECTION_GAIN),
+                и затухает медленнее (MOOD_AFFECTION_DECAY_RATE).
         """
-        positive = max(0.0, feedback_valence)
-        negative = max(0.0, -feedback_valence)
+        novelty = _clamp(appraisal.novelty)
+        coping = _clamp(appraisal.coping)
+        congruence = _clamp(appraisal.goal_congruence, -1.0, 1.0)
+
+        good = max(0.0, congruence)
+        bad = max(0.0, -congruence)
+        helpless = 1.0 - coping
 
         delta = MoodDelta(
-            joy=positive * 0.4,
-            curiosity=perplexity * 0.3,
-            anxiety=negative * 0.35 + (emotion_score * 0.1 if feedback_valence <= 0 else 0.0),
-            affection=positive * 0.2,
+            curiosity=novelty * coping * config.MOOD_CURIOSITY_GAIN,
+            joy=good * config.MOOD_JOY_GAIN,
+            anxiety=(bad + novelty * helpless) * config.MOOD_ANXIETY_GAIN,
+            affection=good * config.MOOD_AFFECTION_GAIN,
         )
         return self.apply_stimulus(delta, log=log)
 
@@ -210,11 +254,18 @@ class Mood:
     def decay(self, log: bool = True) -> MoodState:
         """
         Mood(t+1) = Mood(t) - gamma * (Mood(t) - Baseline)
+
+        У привязанности СВОЯ gamma, много меньше остальных. Эмоция живёт
+        секунды, настроение — часы, привязанность — дни и недели. Раньше
+        gamma была одна на всё, и бот "отвыкал" от наставника примерно за
+        пять реплик.
         """
         self.joy = _clamp(self.joy - self.decay_rate * (self.joy - BASELINE_JOY))
         self.curiosity = _clamp(self.curiosity - self.decay_rate * (self.curiosity - BASELINE_CURIOSITY))
         self.anxiety = _clamp(self.anxiety - self.decay_rate * (self.anxiety - BASELINE_ANXIETY))
-        self.affection = _clamp(self.affection - self.decay_rate * (self.affection - BASELINE_AFFECTION))
+        self.affection = _clamp(
+            self.affection - self.affection_decay_rate * (self.affection - BASELINE_AFFECTION)
+        )
 
         state = self.get_state(decay_applied=True)
 
