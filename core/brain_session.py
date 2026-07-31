@@ -614,7 +614,12 @@ class BrainSession:
                 self.db_path, snapshot.state.value, snapshot.boredom, snapshot.seconds_since_sleep_start,
             )
 
-            if snapshot.boredom >= config.BOREDOM_THRESHOLD:
+            # Порог зависит от накопленной привязанности: чем ближе стал
+            # человек, тем раньше организм не выдерживает молчания.
+            threshold = self.boredom_drive.effective_threshold(
+                self.cortex.mood.get_state().affection
+            )
+            if snapshot.boredom >= threshold:
                 last_node_id = self.activation_state.get_last_active()
                 node = self.memory.select_proactive_node(
                     last_active_node_id=last_node_id,

@@ -67,6 +67,27 @@ class BoredomDrive:
         drive.on_user_message(brain_time)
     """
 
+    @staticmethod
+    def effective_threshold(affection: float) -> float:
+        """
+        Порог скуки с поправкой на привязанность: чем ближе человек, тем
+        хуже переносится его молчание.
+
+        Раньше порог был константой — организм ждал одинаково независимо
+        от того, сложилась ли связь. Но привязанность копится за много
+        тёплых обменов и живёт на своей, медленной шкале времени
+        (MOOD_AFFECTION_DECAY_RATE), поэтому её естественное следствие —
+        именно долгая линия поведения, а не реакция на отдельную реплику.
+
+        Отсчёт идёт от уровня покоя: привязанность на базовом уровне порог
+        не двигает. Ниже BOREDOM_THRESHOLD_FLOOR не опускаемся — даже
+        сильнейшая связь не должна делать организм навязчивым.
+        """
+        baseline = config.MOOD_BASELINE_AFFECTION
+        attachment = max(0.0, affection - baseline)
+        threshold = config.BOREDOM_THRESHOLD - attachment * config.BOREDOM_AFFECTION_IMPATIENCE
+        return max(config.BOREDOM_THRESHOLD_FLOOR, threshold)
+
     def __init__(self):
         self.state: SystemState = SystemState.AWAKE
         self._sleep_start_time: Optional[float] = None
