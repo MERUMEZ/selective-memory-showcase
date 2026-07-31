@@ -200,25 +200,6 @@ class InstinctSystem:
     # BABBLING — довербальная стадия освоения речи (лепет)
     # ----------------------------------------------------------------------
 
-    def should_babble(self, vocabulary_size: int) -> bool:
-        """
-        Определяет, стоит ли использовать "лепет" вместо обычной эхолалии.
-
-        Лепет возможен ТОЛЬКО на стадии малого словарного запаса
-        (vocabulary_size < BABBLING_VOCABULARY_THRESHOLD) — как только
-        система усвоила достаточно слов, лепет прекращается сам собой
-        (естественный переход от довербальной стадии к речи).
-
-        vocabulary_size — количество уникальных освоенных word-узлов
-        (см. MemoryGraph.get_vocabulary_size()).
-        """
-        import random
-
-        if vocabulary_size >= config.BABBLING_VOCABULARY_THRESHOLD:
-            return False
-
-        return random.random() < config.BABBLING_PROBABILITY
-
     def get_babble_ratio(self, vocabulary_size: int, arousal: float = 0.0) -> float:
         """
         Continuous доля "лепетного" поведения в смешанном ответе, [0.0, 1.0]:
@@ -385,56 +366,6 @@ class InstinctSystem:
         )
 
         return BabbleResult(text=text, used_node_ids=list(dict.fromkeys(used_ids)))
-
-    def generate_babble_response(self, known_syllables: List["KnownSyllable"]) -> BabbleResult:
-        """
-        Генерирует "лепетный" ответ — ВЗВЕШЕННУЮ (по весу/усвоенности узла)
-        комбинацию уже известных слогов, имитируя довербальную стадию
-        освоения речи ребёнком ("ма-ма-ба", "ту-ту-ка" и т.п.).
-
-        В отличие от прежней реализации (чистый random.choice), более
-        "усвоенные" слоги (выше weight — чаще встречались/чаще получали
-        позитивный фидбэк раньше) выбираются ЧАЩЕ, но не исключительно —
-        это даёт постепенный уклон к уже проверенным комбинациям без
-        полной потери разнообразия.
-
-        Возвращает BabbleResult(text="", used_node_ids=[]), если известных
-        слогов недостаточно (< BABBLING_MIN_KNOWN_SYLLABLES) — вызывающий
-        код (Cortex) в этом случае должен откатиться на обычную эхолалию.
-        """
-        import random
-
-        if len(known_syllables) < config.BABBLING_MIN_KNOWN_SYLLABLES:
-            logger.debug(
-                "[INSTINCT: BABBLING] Недостаточно известных слогов (%d < %d) -> пропуск",
-                len(known_syllables), config.BABBLING_MIN_KNOWN_SYLLABLES,
-            )
-            return BabbleResult(text="", used_node_ids=[])
-
-        # Взвешенная выборка: минимум 0.01, чтобы совсем "свежие" слоги
-        # (weight около 0) не получали нулевую вероятность быть выбранными —
-        # разнообразие должно сохраняться даже для новых слогов.
-        weights = [max(0.01, s.weight) for s in known_syllables]
-
-        words: List[str] = []
-        used_ids: List[int] = []
-
-        for _ in range(config.BABBLING_WORDS_PER_RESPONSE):
-            syllable_count = random.randint(
-                config.BABBLING_MIN_SYLLABLES, config.BABBLING_MAX_SYLLABLES
-            )
-            chosen = random.choices(known_syllables, weights=weights, k=syllable_count)
-            words.append("".join(c.text for c in chosen))
-            used_ids.extend(c.id for c in chosen)
-
-        response = " ".join(words)
-        unique_used_ids = list(dict.fromkeys(used_ids))  # дедуп с сохранением порядка
-
-        logger.info(
-            "[INSTINCT: BABBLING] Лепет сгенерирован -> %r (node_ids=%s)",
-            response[:60], unique_used_ids,
-        )
-        return BabbleResult(text=response, used_node_ids=unique_used_ids)
 
     # ----------------------------------------------------------------------
 

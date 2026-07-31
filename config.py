@@ -167,7 +167,6 @@ STABILITY_MAX = _get_float("STABILITY_MAX", 40.0)
 FORGET_THRESHOLD = _get_float("FORGET_THRESHOLD", 0.05)
 
 # Как часто запускать цикл дефрагментации/забывания (в секундах)
-SLEEP_CYCLE_INTERVAL = _get_float("SLEEP_CYCLE_INTERVAL", 1800.0)
 
 
 # ==========================================================================
@@ -193,7 +192,6 @@ EMOTION_EMOJI_WEIGHT = _get_float("EMOTION_EMOJI_WEIGHT", 0.2)
 
 # Базовое "затухание" эмоции — насколько быстро эмоц. накал спадает
 # между сообщениями (0 = не спадает, 1 = мгновенно забывается)
-EMOTION_BASELINE_DECAY = _get_float("EMOTION_BASELINE_DECAY", 0.4)
 
 
 # ==========================================================================
@@ -204,10 +202,8 @@ EMOTION_BASELINE_DECAY = _get_float("EMOTION_BASELINE_DECAY", 0.4)
 STRESS_OVERLOAD_THRESHOLD = _get_float("STRESS_OVERLOAD_THRESHOLD", 0.8)
 
 # Скорость накопления стресса за один "тревожный" импульс
-STRESS_ACCUMULATION_RATE = _get_float("STRESS_ACCUMULATION_RATE", 0.1)
 
 # Скорость восстановления (снижения) стресса со временем/шагами
-STRESS_RECOVERY_RATE = _get_float("STRESS_RECOVERY_RATE", 0.05)
 
 
 # ==========================================================================
@@ -286,9 +282,6 @@ EXPLORATION_CURIOSITY_GAIN = _get_float("EXPLORATION_CURIOSITY_GAIN", 0.45)
 # ==========================================================================
 LOG_LEVEL = _get_str("LOG_LEVEL", "INFO")
 
-# Включать ли подробные логи внутренних событий
-# (например, [SPIKE DETECTED], [DECAY APPLIED])
-VERBOSE_INTERNAL_LOGS = _get_str("VERBOSE_INTERNAL_LOGS", "true").lower() == "true"
 
 
 # ==========================================================================
@@ -320,7 +313,6 @@ EMBEDDING_MODEL_PATH = _get_str(
     str(Path(MODELS_DIR) / "navec_hudlit_v1_12B_500K_300d_100q.tar"),
 )
 # Размерность модели — нужна для проверки целостности сохранённых BLOB-ов
-EMBEDDING_DIM = _get_int("EMBEDDING_DIM", 300)
 
 
 # Порог итоговой комбинированной оценки схожести (0.0..1.0), при которой

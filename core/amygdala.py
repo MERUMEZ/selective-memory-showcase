@@ -188,13 +188,6 @@ class Amygdala:
     # Feedback Valence Detection (Подсознательное Подкрепление)
     # ----------------------------------------------------------------------
 
-    def detect_feedback_valence(self, text: str) -> float:
-        """
-        Обёртка над detect_feedback_signal для обратной совместимости —
-        возвращает только итоговую валентность без списка маркеров.
-        """
-        return self.detect_feedback_signal(text).valence
-
     def detect_feedback_signal(self, text: str) -> FeedbackSignal:
         """
         Сканирует текст на маркеры одобрения/порицания и возвращает
