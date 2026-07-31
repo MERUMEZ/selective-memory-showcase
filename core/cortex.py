@@ -617,9 +617,28 @@ class Cortex:
 
         applied_delta = 0.0
 
+        # --- ДОФАМИНОВЫЙ СИГНАЛ: ошибка предсказания награды ---
+        # Считается ДО применения эффектов, потому что именно она (а не
+        # сама валентность) задаёт темп закрепления: неожиданная похвала
+        # закрепляет сильно, полностью предсказанная — почти никак.
+        # Побочно обновляет ожидание на каждом задействованном узле.
+        reward_nodes = [trace.node_id] if trace.node_id is not None else list(trace.node_ids or [])
+        reward_signals = [
+            signal for signal in (
+                self.memory.apply_reward(node_id, valence, timestamp=timestamp)
+                for node_id in reward_nodes
+            ) if signal is not None
+        ]
+        # Один множитель на всё действие: сила самого неожиданного из
+        # задействованных узлов. Действие оценивается целиком.
+        learning_scale = (
+            max(self.memory.learning_scale(s.prediction_error) for s in reward_signals)
+            if reward_signals else 1.0
+        )
+
         if valence > 0:
             if trace.node_id is not None:
-                boost = valence * config.REWARD_POSITIVE_BOOST
+                boost = valence * config.REWARD_POSITIVE_BOOST * learning_scale
                 self.memory.reinforce_node(trace.node_id, boost=boost, timestamp=timestamp)
                 applied_delta = boost
 
@@ -639,7 +658,7 @@ class Cortex:
                 # ассоциативные рёбра МЕЖДУ ними — успешная комбинация слогов
                 # запоминается как связка, зачаток будущего "слова",
                 # выкристаллизовывающегося из повторяющегося удачного лепета.
-                boost = valence * config.REWARD_POSITIVE_BOOST
+                boost = valence * config.REWARD_POSITIVE_BOOST * learning_scale
                 for node_id in trace.node_ids:
                     self.memory.reinforce_node(node_id, boost=boost, timestamp=timestamp)
                 self.memory.reinforce_coactivation(trace.node_ids, weight_boost=boost, timestamp=timestamp)
@@ -667,7 +686,7 @@ class Cortex:
 
         else:  # valence < 0
             if trace.node_id is not None:
-                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY
+                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY * learning_scale
                 self.memory.penalize_node(trace.node_id, penalty=penalty, timestamp=timestamp)
                 applied_delta = -penalty
                 effect = "penalized"
@@ -677,7 +696,7 @@ class Cortex:
                 # слог этой конкретной неудачной комбинации — она станет
                 # реже выбираться при следующей взвешенной выборке
                 # (см. InstinctSystem.generate_babble_response).
-                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY
+                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY * learning_scale
                 for node_id in trace.node_ids:
                     self.memory.penalize_node(node_id, penalty=penalty, timestamp=timestamp)
                 applied_delta = -penalty

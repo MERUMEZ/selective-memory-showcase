@@ -357,7 +357,16 @@ class InstinctSystem:
             # исходной фразы — так реплика читается естественно
             # ("привет как дела", а не "дела привет как").
             limit = max(1, config.MIMICRY_MAX_KNOWN_WORDS)
-            strongest = sorted(mastered_words, key=lambda w: w.weight, reverse=True)[:limit]
+            # Отбор по preference, а не по голому весу: при сопоставимой
+            # освоенности организм предпочитает слова, за которые его
+            # хвалили. Это и есть стремление к одобрению в действии —
+            # раньше награда меняла веса задним числом, но на ВЫБОР
+            # следующего действия не влияла никак.
+            strongest = sorted(
+                mastered_words,
+                key=lambda w: (w.preference or w.weight),
+                reverse=True,
+            )[:limit]
             chosen_ids = {w.id for w in strongest}
             spoken_words = [w.text for w in mastered_words if w.id in chosen_ids]
             used_ids.extend(w.id for w in mastered_words if w.id in chosen_ids)
