@@ -1,0 +1,14 @@
+[Unit]
+Description=Mindnumbness Memory Mini App
+After=network.target
+
+[Service]
+Type=simple
+User=CHANGE_ME
+WorkingDirectory=/var/www/mindnumbness
+ExecStart=/var/www/mindnumbness/venv/bin/python /var/www/mindnumbness/tools/miniapp.py --host 127.0.0.1 --port 8002
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
