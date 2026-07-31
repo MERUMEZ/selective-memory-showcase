@@ -288,7 +288,9 @@ def run_simulation(
         # следующий apply_decay внутри process_message увидит этот dt.
         if session_length and gap_hours and i > 1 and (i - 1) % session_length == 0:
             before = session.memory.get_vocabulary_size()
-            session.clock.advance_by(gap_hours * 3600.0)
+            # Часы — чистая функция настенного времени, поэтому пауза
+            # моделируется промоткой, а не ручным сложением
+            session.clock.simulate_elapsed_wall_seconds(gap_hours * 3600.0)
             session.memory.apply_decay(now=session.clock.get_brain_time())
             after = session.memory.get_vocabulary_size()
             print(

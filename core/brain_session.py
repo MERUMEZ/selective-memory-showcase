@@ -35,7 +35,6 @@ from storage.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-TICK_SECONDS = config._get_float("TICK_SECONDS", 120.0) if hasattr(config, "_get_float") else 120.0
 AUTO_SLEEP_IDLE_TICKS = config._get_int("AUTO_SLEEP_IDLE_TICKS", 15) if hasattr(config, "_get_int") else 15
 
 SLEEP_COMMANDS = {"/sleep", "спать", "сон"}
@@ -105,44 +104,112 @@ class SharedActivationState:
 
 class SharedBrainClock:
     """
-    Потокобезопасный контейнер для brain_time. Перенесён без изменений
-    из main.py (SharedBrainClock) — сохранён threading.Lock, т.к. в
-    следующих этапах фоновый тик может жить в отдельном потоке/таске.
+    Субъективное время организма — ОДНА когерентная шкала.
+
+        brain_time = эпоха + (настенное - эпоха_настенная) * TIME_ACCELERATION
+
+    Раньше часы были составными и ломались тремя способами сразу:
+
+    1. TICK_SECONDS=120 прибавлялись за КАЖДОЕ сообщение независимо от
+       того, сколько прошло на самом деле, плюс фоновый тик капал
+       реальными секундами. Замер: часы бежали ВСЕМЕРО быстрее настенных
+       (30 сообщений за 10 реальных минут давали 70 минут внутренних).
+       Из-за этого все временные константы тайно зависели от интенсивности
+       общения: AGE_T0="1 час" на деле означал ~9 минут живого разговора.
+
+    2. BrainSession.__init__ ставил brain_time = time.time(), поэтому при
+       выгрузке и возврате сессии часы ПРЫГАЛИ НАЗАД на настенное "сейчас",
+       а last_decayed_at узлов оставался от разогнанных. В _decay_nodes
+       стоит `if dt <= 0: continue`, то есть забывание МОЛЧА выключалось:
+       после разговора на 100 сообщений — ещё на 2.3 часа.
+
+    3. seconds_since_last_user_message считалось по brain_time, а
+       seconds_since_last_activity по time.time() — одна и та же пауза
+       мерялась двумя разными линейками.
+
+    Теперь шкала одна, монотонная и переживающая перезагрузку: эпоха
+    хранится в БД (мета-узел), поэтому продолжение сессии не сбрасывает
+    отсчёт. Ускорение стало ОДНОЙ явной константой, а не побочным эффектом
+    от "+120 за сообщение".
+
+    ВНЕШНИЕ события меряются НАСТЕННЫМ временем и намеренно: "ушёл ли
+    пользователь" и "пора ли выгрузить сессию из памяти" — вопросы про
+    внешний мир и оперативную память, а не про субъективное время
+    организма (см. seconds_since_last_activity).
     """
 
-    def __init__(self, initial_brain_time: float):
+    def __init__(self, epoch: float):
+        """
+        epoch — ОДНА настенная метка: момент, когда у этого мозга начался
+        отсчёт субъективного времени. Хранится в БД и переживает
+        перезагрузку.
+
+        Именно одна, а не пара (начальное brain_time + настенная точка):
+        при паре момент старта процесса становится второй точкой отсчёта,
+        и часы снова сбрасываются при каждой перезагрузке — ровно тот
+        дефект, который мы и чиним.
+        """
         self._lock = threading.Lock()
-        self._brain_time = initial_brain_time
-        self.last_user_msg_time = initial_brain_time
-        self.last_activity_time = time.time()
+        self._epoch = epoch
+        self.last_user_brain_time = self._brain_time_unlocked()
+        self.last_activity_wall = time.time()
 
     def get_brain_time(self) -> float:
+        """Субъективное время организма — чистая функция настенного."""
         with self._lock:
-            return self._brain_time
+            return self._brain_time_unlocked()
 
-    def advance_by(self, delta_seconds: float) -> float:
-        with self._lock:
-            self._brain_time += delta_seconds
-            return self._brain_time
+    def _brain_time_unlocked(self) -> float:
+        elapsed = max(0.0, time.time() - self._epoch)
+        return self._epoch + elapsed * config.TIME_ACCELERATION
 
-    def register_user_message(self, delta_seconds: float) -> float:
+    def register_user_message(self) -> float:
+        """Отмечает реплику пользователя. Часы идут сами — двигать их нечем."""
         with self._lock:
-            self._brain_time += delta_seconds
-            self.last_user_msg_time = self._brain_time
-            self.last_activity_time = time.time()
-            return self._brain_time
+            brain_time = self._brain_time_unlocked()
+            self.last_user_brain_time = brain_time
+            self.last_activity_wall = time.time()
+            return brain_time
 
     def register_activity(self) -> None:
         with self._lock:
-            self.last_activity_time = time.time()
+            self.last_activity_wall = time.time()
+
+    def simulate_elapsed_wall_seconds(self, wall_seconds: float) -> float:
+        """
+        Промотать часы так, будто прошло wall_seconds НАСТЕННОГО времени.
+        Нужно измерительному стенду, чтобы моделировать паузы между
+        сессиями, не ожидая их в реальности.
+
+        Эпоха входит в формулу дважды (brain = epoch + (now-epoch)*A),
+        поэтому сдвиг на D даёт прирост D*(A-1), а не D*A. Отсюда
+        коэффициент: чтобы получить прирост wall_seconds*A, сдвигать надо
+        на wall_seconds*A/(A-1). Наивный сдвиг на wall_seconds*A промотал
+        бы часы вшестеро дальше нужного.
+        """
+        acceleration = config.TIME_ACCELERATION
+        if acceleration <= 1.0:
+            shift = wall_seconds
+        else:
+            shift = wall_seconds * acceleration / (acceleration - 1.0)
+        with self._lock:
+            self._epoch -= shift
+            self.last_activity_wall -= wall_seconds
+            return self._brain_time_unlocked()
 
     def seconds_since_last_user_message(self) -> float:
+        """В субъективных секундах — это про внутреннюю жизнь организма."""
         with self._lock:
-            return self._brain_time - self.last_user_msg_time
+            return self._brain_time_unlocked() - self.last_user_brain_time
 
     def seconds_since_last_activity(self) -> float:
+        """
+        В НАСТЕННЫХ секундах — намеренно. Отсюда решается, ушёл ли
+        пользователь и пора ли выгружать сессию из оперативной памяти:
+        вопросы про внешний мир, а не про субъективное время.
+        """
         with self._lock:
-            return time.time() - self.last_activity_time
+            return time.time() - self.last_activity_wall
 
 
 class BrainSession:
@@ -180,8 +247,10 @@ class BrainSession:
         )
         self.boredom_drive = BoredomDrive()
 
-        session_start_real = time.time()
-        self.clock = SharedBrainClock(initial_brain_time=session_start_real)
+        # Эпоха переживает перезагрузку: иначе часы прыгали бы назад
+        # относительно меток в БД и забывание молча выключалось
+        epoch = self.memory.get_or_create_brain_epoch()
+        self.clock = SharedBrainClock(epoch=epoch)
         self.activation_state = SharedActivationState()
 
         self.idle_ticks_without_event: int = 0
@@ -228,7 +297,7 @@ class BrainSession:
         if not user_input:
             return BrainResponse(text="", debug={"skipped": True})
 
-        brain_time = self.clock.register_user_message(TICK_SECONDS)
+        brain_time = self.clock.register_user_message()
         self.boredom_drive.on_user_message(brain_time)
 
         if user_input.lower() in SLEEP_COMMANDS:
@@ -241,7 +310,7 @@ class BrainSession:
                 debug={"brain_time": brain_time, "event": "manual_sleep"},
             )
 
-        logger.info("[BRAIN CLOCK] Tick: brain_time=%.1f (+%.1fs)", brain_time, TICK_SECONDS)
+        logger.info("[BRAIN CLOCK] brain_time=%.1f (ускорение x%.1f)", brain_time, config.TIME_ACCELERATION)
 
         # 2. ПОДСОЗНАТЕЛЬНОЕ ПОДКРЕПЛЕНИЕ — Триада Input -> Action -> Feedback.
         reward_trace_log = None
@@ -596,7 +665,8 @@ class BrainSession:
 
     def _run_idle_tick_unlocked(self, delta_seconds: float) -> Optional[BrainIdleEvent]:
         """Тело фонового тика. Вызывать только под self._lock."""
-        brain_time = self.clock.advance_by(delta_seconds)
+        # Часы идут сами — фоновому тику двигать их нечем
+        brain_time = self.clock.get_brain_time()
         idle_seconds = self.clock.seconds_since_last_activity()
 
         if self.boredom_drive.is_awake() and idle_seconds >= config.IDLE_SLEEP_THRESHOLD_SECONDS:
