@@ -929,8 +929,13 @@ class Cortex:
         переключений между стадиями речевого развития.
         """
         known_syllables = self.memory.get_known_syllables()
+        # Какие слова этой фразы организм действительно освоил — они и
+        # станут его ответом. Без этого выученный словарь влиял только на
+        # счётчик, разрешающий говорить, но не на то, ЧТО будет сказано.
+        mastered_words = self.memory.get_mastered_words_in(text)
         blend_result = self.instincts.generate_blended_mimicry_response(
             text, known_syllables, vocabulary_size, timestamp=timestamp,
+            mastered_words=mastered_words,
         )
 
         self._record_action_trace(

@@ -30,7 +30,7 @@ import config
 from storage.utils.logger import get_logger
 
 if TYPE_CHECKING:
-    from memory.graph_memory import KnownSyllable
+    from memory.graph_memory import KnownSyllable, KnownWord
 
 logger = get_logger(__name__)
 
@@ -312,19 +312,31 @@ class InstinctSystem:
         known_syllables: List["KnownSyllable"],
         vocabulary_size: int,
         timestamp: Optional[float] = None,
+        mastered_words: Optional[List["KnownWord"]] = None,
     ) -> BabbleResult:
         """
-        Единая реалистичная генерация защитной/довербальной мимикрии:
-        смешивает лепет и эхо реальных слов юзера В ОДНОЙ реплике, без
-        резкого переключения между "чистый лепет" и "чистое эхо" — как
-        у настоящего ребёнка на переходных стадиях речевого развития
-        (например: "мама... [лепет] дай!" — одно реальное услышанное
-        слово вперемешку со слогами).
+        Довербальная и однословная речь: организм произносит те слова,
+        которые РЕАЛЬНО освоил, а всё незнакомое добирает лепетом.
 
-        Доля лепета (babble_ratio) непрерывно убывает по мере роста
-        словаря и резко возрастает при перегрузке стрессом (регрессия).
-        Заменяет прежний жёсткий выбор should_babble() -> babble ИЛИ
-        обычная эхолалия (fallback).
+        ОДНОСЛОВНАЯ СТАДИЯ. Раньше её не существовало: код прыгал от
+        чистого лепета сразу к фразам от LLM. При словаре 7 слов
+        babble_ratio выходил ровно 1.0, ветка эха отключалась целиком
+        (`if user_words and babble_ratio < 1.0`), и на "привет" бот отвечал
+        случайными слогами — хотя знал слово "привет" лучше всех прочих
+        (вес 0.747). Знание слова управляло только счётчиком, решающим,
+        разрешить ли говорить, но не тем, ЧТО сказать.
+
+        Теперь порядок такой:
+            1. mastered_words — слова входа, которые организм освоил
+               (MemoryGraph.get_mastered_words_in). Это его собственные
+               слова, и он их произносит: "привет" -> "привет".
+            2. Незнакомое остаётся лепетом, доля которого по-прежнему
+               убывает с ростом словаря и растёт при перегрузке стрессом.
+            3. Если из входа не узнано НИЧЕГО — поведение как раньше:
+               случайное эхо (при ratio < 1.0) плюс лепет.
+
+        Это ровно то, что делает ребёнок на однословной стадии: говорит
+        освоенными словами, остальное договаривает лепетом.
         """
         import random
 
@@ -335,23 +347,51 @@ class InstinctSystem:
             babble_ratio = 0.0
 
         user_words = [w for w in input_text.strip().split() if w]
+        mastered_words = mastered_words or []
 
-        echoed_words: List[str] = []
-        if user_words and babble_ratio < 1.0:
+        spoken_words: List[str] = []
+        used_ids: List[int] = []
+
+        if mastered_words:
+            # Свои слова: берём сильнейшие, но произносим в порядке
+            # исходной фразы — так реплика читается естественно
+            # ("привет как дела", а не "дела привет как").
+            limit = max(1, config.MIMICRY_MAX_KNOWN_WORDS)
+            strongest = sorted(mastered_words, key=lambda w: w.weight, reverse=True)[:limit]
+            chosen_ids = {w.id for w in strongest}
+            spoken_words = [w.text for w in mastered_words if w.id in chosen_ids]
+            used_ids.extend(w.id for w in mastered_words if w.id in chosen_ids)
+        elif user_words and babble_ratio < 1.0:
+            # Ничего не узнано, но лепет не абсолютен -> прежнее поведение:
+            # случайное эхо слов пользователя.
             max_echo = max(
                 1, round(len(user_words) * (1.0 - babble_ratio) * config.BLENDED_ECHO_WORD_RATIO)
             )
-            n_echo = min(max_echo, len(user_words))
-            echoed_words = random.sample(user_words, k=n_echo)
+            spoken_words = random.sample(user_words, k=min(max_echo, len(user_words)))
 
+        # Лепет добирает реплику: он уместен, пока словарь мал, но не
+        # должен забивать уже узнанные слова, если их набралось достаточно.
         babble_words: List[str] = []
-        used_ids: List[int] = []
-        if babble_ratio > 0.0 and len(known_syllables) >= config.BABBLING_MIN_KNOWN_SYLLABLES:
+        babble_allowed = (
+            babble_ratio > 0.0
+            and len(known_syllables) >= config.BABBLING_MIN_KNOWN_SYLLABLES
+            and len(spoken_words) < config.MIMICRY_MAX_KNOWN_WORDS
+        )
+        if babble_allowed:
             n_babble_words = max(1, round(config.BABBLING_WORDS_PER_RESPONSE * babble_ratio))
-            babble_words, used_ids = self._make_babble_words(known_syllables, n_babble_words)
+            if spoken_words:
+                # Рядом со своим словом лепета должно быть немного —
+                # иначе узнанное слово в нём тонет.
+                n_babble_words = 1
+            babble_words, babble_ids = self._make_babble_words(known_syllables, n_babble_words)
+            used_ids.extend(babble_ids)
 
-        fragments = echoed_words + babble_words
-        random.shuffle(fragments)
+        if mastered_words:
+            # Своё слово идёт первым, лепет — следом: "привет ... ба-до".
+            fragments = spoken_words + babble_words
+        else:
+            fragments = spoken_words + babble_words
+            random.shuffle(fragments)
 
         if not fragments:
             # Нечем ни лепетать, ни повторить (пустой вход и нет слогов)
@@ -361,8 +401,8 @@ class InstinctSystem:
             text = " ".join(fragments)
 
         logger.info(
-            "[INSTINCT: BLENDED MIMICRY] ratio=%.2f echo_words=%d babble_words=%d -> %r",
-            babble_ratio, len(echoed_words), len(babble_words), text[:60],
+            "[INSTINCT: BLENDED MIMICRY] ratio=%.2f свои_слова=%d лепет=%d -> %r",
+            babble_ratio, len(spoken_words), len(babble_words), text[:60],
         )
 
         return BabbleResult(text=text, used_node_ids=list(dict.fromkeys(used_ids)))
