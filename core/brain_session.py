@@ -431,6 +431,74 @@ class BrainSession:
 
         return BrainResponse(text=response_text, is_sleep_report=False, debug=debug)
 
+    def get_status_report(self) -> str:
+        """
+        Человекочитаемая сводка состояния "мозга" для команды /status.
+
+        Смысл не в отладке, а в ОБРАТНОЙ СВЯЗИ ДЛЯ УЧИТЕЛЯ. Главная причина,
+        по которой человек бросал обучение, — он не видел ничего: бот сто
+        сообщений подряд отвечал лепетом, и понять, продвигается ли что-то
+        вообще, было невозможно. Здесь показывается прогресс до следующей
+        речевой стадии и то, какие слова реально закрепились.
+
+        Стадия считается ДЕТЕРМИНИРОВАННО (простым сравнением с порогами),
+        в отличие от Cortex._resolve_speech_stage с вероятностной зоной
+        смешения: в отчёте нужна стабильная картинка, а не разное число
+        при двух подряд вызовах /status.
+        """
+        mastered = self.memory.get_vocabulary_size()
+        exposed = self.memory.get_exposed_vocabulary_size()
+
+        boundaries = [
+            (config.SPEECH_STAGE_0_MAX_VOCAB, "лепет (довербальная стадия)"),
+            (config.SPEECH_STAGE_1_MAX_VOCAB, "простые фразы из одного предложения"),
+            (config.SPEECH_STAGE_2_MAX_VOCAB, "простая грамматика, 1-2 предложения"),
+        ]
+
+        stage_index = 0
+        stage_name = "свободная речь"
+        next_threshold = None
+        for index, (threshold, name) in enumerate(boundaries):
+            if mastered < threshold:
+                stage_index = index
+                stage_name = name
+                next_threshold = threshold
+                break
+        else:
+            stage_index = len(boundaries)
+
+        lines = [
+            "🧠 Состояние",
+            f"Стадия речи: {stage_index} — {stage_name}",
+        ]
+
+        if next_threshold is not None:
+            remaining = next_threshold - mastered
+            filled = int(12 * mastered / next_threshold)
+            bar = "█" * min(12, filled) + "░" * max(0, 12 - filled)
+            lines.append(f"Прогресс: {bar} {mastered}/{next_threshold}")
+            lines.append(f"До следующей стадии осталось выучить слов: {remaining}")
+        else:
+            lines.append(f"Словарь: {mastered} слов — все стадии пройдены")
+
+        lines.append("")
+        lines.append(f"Освоено слов: {mastered} (услышано всего: {exposed})")
+        lines.append(f"Узлов в памяти: {self.memory.count_nodes()}")
+
+        top_words = self.memory.get_top_words(limit=6)
+        if top_words:
+            rendered = ", ".join(f"{text} ({weight:.2f})" for text, weight in top_words)
+            lines.append(f"Лучше всего выучено: {rendered}")
+
+        if mastered < config.SPEECH_STAGE_0_MAX_VOCAB:
+            lines.append("")
+            lines.append(
+                "Пока я только лепечу. Слово закрепляется примерно с третьего "
+                "употребления — повторяй одни и те же слова, так я выучу их быстрее."
+            )
+
+        return "\n".join(lines)
+
     # ----------------------------------------------------------------------
     # Обслуживание фонового "тика" (Этап 5 — Idle Sleep / Boredom).
     # Вызывается извне (bot.py::_idle_scheduler_loop) через asyncio.to_thread

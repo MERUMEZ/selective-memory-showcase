@@ -76,8 +76,28 @@ async def handle_start(message: Message) -> None:
     await message.answer(
         "Привет! Я — растущий цифровой разум. Пиши мне что угодно, "
         "я учусь у тебя языку и понятиям с нуля.\n\n"
-        "Команда /sleep — запустить фазу консолидации памяти (сон)."
+        "Сначала я умею только лепетать — слова закрепляются примерно "
+        "с третьего употребления, так что повторяй их, и я начну "
+        "отвечать фразами.\n\n"
+        "/status — посмотреть, чему я уже научился\n"
+        "/sleep — запустить фазу консолидации памяти (сон)"
     )
+
+
+@router.message(Command("status"))
+async def handle_status(message: Message) -> None:
+    """
+    Показывает прогресс обучения: стадия речи, сколько слов до следующей,
+    что уже закрепилось. Без этой обратной связи учитель не видит вообще
+    ничего и бросает — см. BrainSession.get_status_report.
+    """
+    manager = get_manager()
+    user_id = message.from_user.id
+
+    session = await asyncio.to_thread(manager.get_or_create, user_id)
+    report = await asyncio.to_thread(session.get_status_report)
+
+    await message.answer(report)
 
 
 @router.message(Command("sleep"))
