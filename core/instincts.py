@@ -313,6 +313,7 @@ class InstinctSystem:
         vocabulary_size: int,
         timestamp: Optional[float] = None,
         mastered_words: Optional[List["KnownWord"]] = None,
+        exploration_word: Optional["KnownWord"] = None,
     ) -> BabbleResult:
         """
         Довербальная и однословная речь: организм произносит те слова,
@@ -378,6 +379,17 @@ class InstinctSystem:
             )
             spoken_words = random.sample(user_words, k=min(max_echo, len(user_words)))
 
+        # ПОПЫТКА: организм рискует произнести ещё не освоенное слово.
+        # Решение принято выше (Cortex._pick_exploration_word) — там есть
+        # доступ к любопытству. Слово встаёт в конец: сначала уверенное,
+        # потом пробное, как ребёнок договаривает неуверенное вслед за
+        # знакомым. Его узел уходит в used_node_ids, поэтому похвала
+        # доберётся и до него — так замыкается контур освоения:
+        # попробовал -> похвалили -> закрепилось.
+        if exploration_word is not None:
+            spoken_words.append(exploration_word.text)
+            used_ids.append(exploration_word.id)
+
         # Лепет — это "мне есть что сказать, но нет слова". Поэтому он
         # добирает ТОЛЬКО неузнанную часть реплики: если организм понял
         # всё, что услышал, договаривать нечего и лепет неуместен.
@@ -386,7 +398,10 @@ class InstinctSystem:
         # "привет дорщена" — не мог сказать одно слово, даже когда знал
         # ровно его. Ребёнок на однословной стадии отвечает "привет" и
         # замолкает; лепет появляется там, где мысль есть, а слова нет.
-        unrecognised = max(0, len(user_words) - len(mastered_words))
+        # Опробованное слово тоже произнесено, поэтому лепету оно уже не
+        # достаётся — иначе одна и та же дыра была бы закрыта дважды.
+        covered = len(mastered_words) + (1 if exploration_word is not None else 0)
+        unrecognised = max(0, len(user_words) - covered)
 
         babble_words: List[str] = []
         can_babble = (
@@ -402,11 +417,12 @@ class InstinctSystem:
             babble_words, babble_ids = self._make_babble_words(known_syllables, n_babble_words)
             used_ids.extend(babble_ids)
 
-        if mastered_words:
-            # Своё слово идёт первым, лепет — следом: "привет ... ба-до".
-            fragments = spoken_words + babble_words
-        else:
-            fragments = spoken_words + babble_words
+        fragments = spoken_words + babble_words
+        if not spoken_words:
+            # Настоящих слов нет — порядок чистого лепета ничего не значит.
+            # Но если хоть одно слово произнесено (своё или пробное), его
+            # нельзя перемешивать с лепетом: сначала то, в чём организм
+            # уверен, потом то, что он договаривает.
             random.shuffle(fragments)
 
         if not fragments:

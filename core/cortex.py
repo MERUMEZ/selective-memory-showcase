@@ -982,9 +982,12 @@ class Cortex:
         # станут его ответом. Без этого выученный словарь влиял только на
         # счётчик, разрешающий говорить, но не на то, ЧТО будет сказано.
         mastered_words = self.memory.get_mastered_words_in(text)
+        exploration_word = self._pick_exploration_word(text)
+
         blend_result = self.instincts.generate_blended_mimicry_response(
             text, known_syllables, vocabulary_size, timestamp=timestamp,
             mastered_words=mastered_words,
+            exploration_word=exploration_word,
         )
 
         self._record_action_trace(
@@ -1000,6 +1003,51 @@ class Cortex:
             source="blended_mimicry",
             mood_state=mood_state,
         )
+
+    def _pick_exploration_word(self, text: str):
+        """
+        Решает, рискнуть ли произнести ещё НЕ ОСВОЕННОЕ слово, и какое.
+
+        Единственный потребитель curiosity — и он ничего не дублирует.
+        Настроение уникально тем, что несёт ИНЕРЦИЮ: сырые сигналы говорят
+        о текущем событии, а любопытство копится через ходы. Поэтому
+        склонность рискнуть определяется накопленным состоянием, а не
+        отдельной репликой.
+
+        До этого механизма организм только эксплуатировал выученное и
+        никогда не пробовал новое — то есть в принципе не мог выйти за
+        пределы уже достигнутого.
+
+        Выбирается слово из зоны ближайшего развития: услышанное, но не
+        закреплённое, и притом САМОЕ БЛИЗКОЕ к порогу освоения. Пробовать
+        то, что далеко за пределами компетенции, бессмысленно — попытка
+        провалится и ничему не научит.
+        """
+        import random
+
+        candidates = self.memory.get_emerging_words_in(text)
+        if not candidates:
+            return None
+
+        baseline = config.MOOD_BASELINE_CURIOSITY
+        curiosity = self.mood.get_state().curiosity
+        # Доля любопытства СВЕРХ покоя: в покое рискуем лишь базово
+        drive = max(0.0, (curiosity - baseline) / max(1e-9, 1.0 - baseline))
+        probability = min(
+            1.0,
+            config.EXPLORATION_BASE_PROBABILITY + drive * config.EXPLORATION_CURIOSITY_GAIN,
+        )
+
+        if random.random() >= probability:
+            return None
+
+        # Ближайшее к порогу — граница освоенного, где и происходит учение
+        chosen = max(candidates, key=lambda w: w.weight)
+        logger.info(
+            "[EXPLORATION] Любопытство %.2f (шанс %.2f) -> пробую неосвоенное слово %r (вес %.3f)",
+            curiosity, probability, chosen.text, chosen.weight,
+        )
+        return chosen
 
     def _resolve_speech_stage(self, vocabulary_size: int) -> int:
         """
