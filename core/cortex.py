@@ -26,7 +26,6 @@
 ================================================================================
 """
 
-import math
 import re
 import config
 from dataclasses import dataclass, field
@@ -189,32 +188,21 @@ class Cortex:
     # ----------------------------------------------------------------------
 
     def calculate_perplexity(self, text: str) -> float:
-        cleaned = text.strip().lower()
-        if not cleaned:
-            return 0.0
+        """
+        Насколько входящий текст НЕОЖИДАНЕН для этого организма.
 
-        freq = {}
-        for ch in cleaned:
-            freq[ch] = freq.get(ch, 0) + 1
+        Это ошибка предсказания по СОБСТВЕННОМУ графу языка, а не свойство
+        строки: см. MemoryGraph.compute_surprise. Прежняя реализация считала
+        энтропию Шеннона по символам и была слепа к опыту — пустой мозг и
+        мозг после 50 повторений фразы выдавали одно и то же число, из-за
+        чего спайк-гейт, уверенность, структурная консолидация и любопытство
+        никогда не менялись от обучения.
 
-        total = len(cleaned)
-        entropy = 0.0
-        for count in freq.values():
-            p = count / total
-            entropy -= p * math.log2(p)
-
-        words = re.findall(r"[^\s\d\W]+", cleaned, flags=re.UNICODE)
-        unique_ratio = len(set(words)) / len(words) if words else 0.0
-
-        normalized_entropy = min(1.0, entropy / 4.5)
-        perplexity = 0.7 * normalized_entropy + 0.3 * unique_ratio
-        perplexity = max(0.0, min(1.0, perplexity))
-
-        logger.debug(
-            "[CORTEX PERPLEXITY] text=%r entropy=%.3f unique_ratio=%.3f -> perplexity=%.3f",
-            text[:50], entropy, unique_ratio, perplexity,
-        )
-        return perplexity
+        Имя и сигнатура сохранены намеренно: у метода четыре потребителя
+        (Amygdala.evaluate, _estimate_confidence, STM-консолидация, Mood),
+        и переименование ничего бы не дало сверх шума в диффе.
+        """
+        return self.memory.compute_surprise(text).total
 
     # ----------------------------------------------------------------------
     # b) Генерация ответа
