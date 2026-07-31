@@ -54,7 +54,7 @@ def format_debug_block(
             f"affection={mood_state.affection:.2f} (dominant={mood_state.dominant_emotion()})"
         )
     lines.append(f"│ Response source         : {response_source}")
-    lines.append(f"│ Current stress          : {stress_state.current_stress:.3f}")
+    lines.append(f"│ Arousal                 : {stress_state.arousal:.3f}")
     lines.append(f"│ Dynamic spike threshold : {stress_state.effective_plasticity_threshold:.3f}")
     lines.append(f"│ Stress overloaded?      : {stress_state.is_overloaded}")
     lines.append(f"│ Spike triggered?        : {spike_triggered}")

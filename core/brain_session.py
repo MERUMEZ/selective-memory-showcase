@@ -174,7 +174,10 @@ class BrainSession:
             stm=self.stm,
             amygdala=self.amygdala,
         )
-        self.sleep_cycle = SleepCycle(memory=self.memory, stm=self.stm, instincts=self.instincts)
+        self.sleep_cycle = SleepCycle(
+            memory=self.memory, stm=self.stm,
+            instincts=self.instincts, mood=self.cortex.mood,
+        )
         self.boredom_drive = BoredomDrive()
 
         session_start_real = time.time()
@@ -288,16 +291,15 @@ class BrainSession:
         perplexity = self.cortex.calculate_perplexity(user_input)
 
         # 5. Состояние инстинктов
-        stress_state = self.instincts.get_state(timestamp=brain_time)
+        stress_state = self.instincts.get_state(self.cortex.mood.get_state().arousal)
 
         # 6. Amygdala — spike detection
         amygdala_result = self.amygdala.evaluate(
             emotion_score=emotion_score,
             perplexity=perplexity,
-            stress_level=stress_state.current_stress,
+            stress_level=stress_state.arousal,
         )
 
-        self.instincts.accumulate_stress(emotion_score, timestamp=brain_time)
 
         # 7. Записываем реплику пользователя в STM
         self.stm.add_message(
@@ -437,7 +439,7 @@ class BrainSession:
         mood_snapshot = self.cortex.mood.decay(log=False)
 
         # 13. Обновлённое состояние стресса
-        updated_stress_state = self.instincts.get_state(timestamp=brain_time)
+        updated_stress_state = self.instincts.get_state(self.cortex.mood.get_state().arousal)
 
         # 14. Итоговый ответ + debug-словарь (замена print_debug_block).
         response_text = cortex_response.text

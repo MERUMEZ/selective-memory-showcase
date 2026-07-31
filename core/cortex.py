@@ -229,9 +229,8 @@ class Cortex:
         # входа) и свою способность справиться. Непонятное интересно, лишь
         # пока есть ресурс это переварить; при перегрузке та же новизна даёт
         # тревогу, а не любопытство.
-        coping = 1.0 - self.instincts.get_state(timestamp=timestamp).current_stress
         mood_state = self.mood.appraise(
-            Appraisal(novelty=perplexity, coping=coping), log=False
+            Appraisal(novelty=perplexity, coping=self.mood.coping()), log=False
         )
 
         # --- CONCEPT EXTRACTION: побочный эффект, не блокирует основной поток ---
@@ -256,9 +255,10 @@ class Cortex:
         speech_stage = self._resolve_speech_stage(vocabulary_size)
         max_tokens = self._resolve_max_tokens(vocabulary_size)
 
-        forced_mimicry = self.instincts.is_overloaded(timestamp) or speech_stage == 0
+        arousal = self.mood.get_state().arousal
+        forced_mimicry = self.instincts.is_overloaded(arousal) or speech_stage == 0
         if forced_mimicry:
-            reason = "перегрузка стрессом" if self.instincts.is_overloaded(timestamp) else "Stage 0 (довербальный)"
+            reason = "перегрузка" if self.instincts.is_overloaded(arousal) else "Stage 0 (довербальный)"
             logger.warning(
                 "[CORTEX GATE] Принудительная мимикрия (%s) -> поиск по LTM/LLM пропущен",
                 reason,
@@ -336,7 +336,9 @@ class Cortex:
 
         # --- Шаг 2: LTM не сработала — лепет / эхолалия / полноценная генерация ---
         context_key = text.strip().lower()
-        use_echolalia = self.instincts.should_use_echolalia(confidence, context_key=context_key, timestamp=timestamp)
+        use_echolalia = self.instincts.should_use_echolalia(
+            confidence, context_key=context_key, arousal=self.mood.get_state().arousal
+        )
 
         if use_echolalia:
             # vocabulary_size уже посчитан выше (в едином гейте перед search()) —
@@ -662,7 +664,7 @@ class Cortex:
         mood_state = self.mood.appraise(
             Appraisal(
                 goal_congruence=congruence,
-                coping=1.0 - self.instincts.get_state(timestamp=timestamp).current_stress,
+                coping=self.mood.coping(),
             )
         )
 
@@ -985,7 +987,8 @@ class Cortex:
         exploration_word = self._pick_exploration_word(text)
 
         blend_result = self.instincts.generate_blended_mimicry_response(
-            text, known_syllables, vocabulary_size, timestamp=timestamp,
+            text, known_syllables, vocabulary_size,
+            arousal=self.mood.get_state().arousal,
             mastered_words=mastered_words,
             exploration_word=exploration_word,
         )

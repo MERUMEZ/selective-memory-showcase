@@ -2,17 +2,25 @@
 ================================================================================
  INSTINCTS.PY — Слой инстинктов и самозащиты "Динамического Мозга"
 ================================================================================
-Класс InstinctSystem отслеживает накопленный стресс системы (current_stress,
-0.0..1.0). Если стресс превышает STRESS_OVERLOAD_THRESHOLD, включается режим
+Класс InstinctSystem — набор ИНСТИНКТИВНЫХ РЕАКЦИЙ, параметризованных
+возбуждением. Собственного состояния нагрузки он больше не хранит: раньше
+здесь жил current_stress, и то же самое состояние вторым экземпляром жило
+как Mood.anxiety — одно измерялось дважды, а работал только один прибор.
+Теперь единая ось возбуждения живёт в Mood (ядерный аффект = возбуждение +
+валентность, разносить их по модулям было архитектурной несвязностью), а
+сюда она приходит параметром.
+
+Если возбуждение превышает STRESS_OVERLOAD_THRESHOLD, включается режим
 самозащиты:
     - порог пластичности временно поднимается (PLASTICITY_STRESS_MODIFIER),
       система становится менее "впечатлительной" (см. core/amygdala.py)
     - Cortex предпочитает безопасный/эхолаличный (мимикрирующий) ответ
       вместо полноценной генерации
 
-Стресс накапливается от "тревожных" импульсов (например, высокий emotion_score,
-неудачные попытки понять контекст) и восстанавливается со временем, если
-система не подвергается новым стрессорам (естественное успокоение).
+Возбуждение накапливается от того, что требует внимания (новизна входа и
+величина ошибки предсказания награды — см. Mood.appraise) и затухает к
+покою. Прежний источник — подсчёт капса и восклицательных знаков — был
+плохим прокси нагрузки.
 
 REINFORCEMENT LOOP (подсознательное подкрепление): _echolalia_bias — словарь
 поправок к вероятности эхолалии для конкретных нормализованных контекстов
@@ -37,8 +45,8 @@ logger = get_logger(__name__)
 
 @dataclass
 class InstinctState:
-    """Снимок текущего состояния инстинктивной системы."""
-    current_stress: float
+    """Снимок реакций инстинктов при текущем возбуждении."""
+    arousal: float
     is_overloaded: bool
     effective_plasticity_threshold: float
 
@@ -61,21 +69,13 @@ class InstinctSystem:
 
     Использование:
         instincts = InstinctSystem()
-        instincts.accumulate_stress(0.3)
-        state = instincts.get_state()
+        state = instincts.get_state(arousal=mood.get_state().arousal)
 
         if state.is_overloaded:
             reply = instincts.generate_echolalia_response(user_text)
     """
 
     def __init__(self):
-        self.current_stress: float = 0.0
-        # None -> лениво инициализируется значением timestamp (brain_time)
-        # первого реального вызова _apply_recovery(), чтобы избежать
-        # смешения доменов времени real time.time() / virtual brain_time
-        # (Фикс J: раньше здесь был time.time(), несовместимый с тем, что
-        # brain_time обычно ОПЕРЕЖАЕТ реальное время из-за TICK_SECONDS).
-        self._last_update: Optional[float] = None
         # Reinforcement Loop: context_key -> bias (-1.0..+1.0), где
         # положительный bias СНИЖАЕТ вероятность эхолалии, отрицательный —
         # ПОВЫШАЕТ (штраф за неудачную эхолалию в этом контексте).
@@ -85,91 +85,38 @@ class InstinctSystem:
     # Накопление / восстановление стресса
     # ----------------------------------------------------------------------
 
-    def accumulate_stress(self, intensity: float = 1.0, timestamp: Optional[float] = None) -> float:
-        self._apply_recovery(timestamp)
-
-        delta = max(0.0, intensity) * config.STRESS_ACCUMULATION_RATE
-        self.current_stress = min(1.0, self.current_stress + delta)
-
-        logger.debug(
-            "[STRESS ACCUMULATED] +%.3f -> current_stress=%.3f",
-            delta, self.current_stress,
-        )
-
-        self._check_overload()
-        return self.current_stress
-
-    def _apply_recovery(self, timestamp: Optional[float] = None) -> None:
-        """
-        Продвигает восстановление стресса на основе ВИРТУАЛЬНОГО brain_time
-        (Фикс J), а не реального time.time() — иначе восстановление живёт
-        на другом временном масштабе, чем decay/boredom/edge decay, которые
-        все синхронно используют brain_time. timestamp=None (fallback на
-        time.time()) поддерживается только для вызовов без доступа к
-        brain_time — в проде main.py/brain_session.py всегда передают brain_time.
-        """
-        now = timestamp if timestamp is not None else time.time()
-
-        if self._last_update is None:
-            # Первый вызов — просто фиксируем точку отсчёта, без recovery.
-            self._last_update = now
-            return
-
-        dt = now - self._last_update
-        self._last_update = now
-
-        if dt <= 0 or self.current_stress <= 0.0:
-            return
-
-        recovered = dt * config.STRESS_RECOVERY_RATE
-        old_stress = self.current_stress
-        self.current_stress = max(0.0, self.current_stress - recovered)
-
-        if old_stress != self.current_stress:
-            logger.debug(
-                "[STRESS RECOVERY] -%.3f (dt=%.1fs) -> current_stress=%.3f",
-                old_stress - self.current_stress, dt, self.current_stress,
-            )
-
-    def recover_stress(self, amount: Optional[float] = None) -> float:
-        step = amount if amount is not None else config.STRESS_RECOVERY_RATE
-        old_stress = self.current_stress
-        self.current_stress = max(0.0, self.current_stress - step)
-
-        logger.debug(
-            "[STRESS RECOVERY] manual -%.3f -> current_stress=%.3f",
-            old_stress - self.current_stress, self.current_stress,
-        )
-        return self.current_stress
-
     # ----------------------------------------------------------------------
-    # Проверка перегрузки / состояние
+    # Реакции на перегрузку (состояние живёт в Mood.arousal)
     # ----------------------------------------------------------------------
 
-    def _check_overload(self) -> bool:
-        is_overloaded = self.current_stress > config.STRESS_OVERLOAD_THRESHOLD
-        if is_overloaded:
+    @staticmethod
+    def is_overloaded(arousal: float) -> bool:
+        """
+        Перегружен ли организм — включается режим самосохранения.
+
+        Возбуждение приходит ПАРАМЕТРОМ: раньше InstinctSystem хранил
+        собственный current_stress, и то же самое состояние жило вторым
+        экземпляром как Mood.anxiety. Теперь ось одна и живёт в Mood, а
+        инстинкты стали набором реакций, параметризованных ею.
+        """
+        overloaded = arousal > config.STRESS_OVERLOAD_THRESHOLD
+        if overloaded:
             logger.warning(
-                "[STRESS OVERLOAD] current_stress=%.3f > threshold=%.3f — режим самозащиты активен",
-                self.current_stress, config.STRESS_OVERLOAD_THRESHOLD,
+                "[OVERLOAD] возбуждение=%.3f > порога=%.3f — режим самосохранения",
+                arousal, config.STRESS_OVERLOAD_THRESHOLD,
             )
-        return is_overloaded
+        return overloaded
 
-    def is_overloaded(self, timestamp: Optional[float] = None) -> bool:
-        self._apply_recovery(timestamp)
-        return self.current_stress > config.STRESS_OVERLOAD_THRESHOLD
-
-    def get_effective_plasticity_threshold(self, timestamp: Optional[float] = None) -> float:
-        self._apply_recovery(timestamp)
-        modifier = self.current_stress * config.PLASTICITY_STRESS_MODIFIER
-        return min(1.0, config.BASE_PLASTICITY_THRESHOLD + modifier)
-
-    def get_state(self, timestamp: Optional[float] = None) -> InstinctState:
-        self._apply_recovery(timestamp)
+    @staticmethod
+    def get_state(arousal: float) -> InstinctState:
+        """Снимок инстинктивного состояния при заданном возбуждении."""
+        modifier = arousal * config.PLASTICITY_STRESS_MODIFIER
         return InstinctState(
-            current_stress=self.current_stress,
-            is_overloaded=self.current_stress > config.STRESS_OVERLOAD_THRESHOLD,
-            effective_plasticity_threshold=self.get_effective_plasticity_threshold(timestamp),
+            arousal=arousal,
+            is_overloaded=arousal > config.STRESS_OVERLOAD_THRESHOLD,
+            effective_plasticity_threshold=min(
+                1.0, config.BASE_PLASTICITY_THRESHOLD + modifier
+            ),
         )
 
     # ----------------------------------------------------------------------
@@ -193,12 +140,12 @@ class InstinctSystem:
         self,
         confidence: float,
         context_key: Optional[str] = None,
-        timestamp: Optional[float] = None,
+        arousal: float = 0.0,
     ) -> bool:
         """
         Определяет, стоит ли использовать эхолалию, комбинируя:
             - вероятностный порог ECHOLALIA_PROBABILITY
-            - текущую перегрузку стрессом (is_overloaded)
+            - текущую перегрузку возбуждением (is_overloaded)
             - низкую уверенность модели (confidence < CONFIDENCE_FALLBACK_THRESHOLD)
             - Reinforcement Loop bias для конкретного context_key (если передан)
 
@@ -207,7 +154,7 @@ class InstinctSystem:
         """
         import random
 
-        if self.is_overloaded(timestamp):
+        if self.is_overloaded(arousal):
             return True
 
         bias = self._echolalia_bias.get(self._normalize_key(context_key), 0.0) if context_key else 0.0
@@ -272,7 +219,7 @@ class InstinctSystem:
 
         return random.random() < config.BABBLING_PROBABILITY
 
-    def get_babble_ratio(self, vocabulary_size: int, timestamp: Optional[float] = None) -> float:
+    def get_babble_ratio(self, vocabulary_size: int, arousal: float = 0.0) -> float:
         """
         Continuous доля "лепетного" поведения в смешанном ответе, [0.0, 1.0]:
         - 1.0 при vocabulary_size около 0 (чистый довербальный лепет)
@@ -285,7 +232,7 @@ class InstinctSystem:
         blend = max(1.0, config.MIMICRY_BLEND_WIDTH)
         base_ratio = (threshold + blend - vocabulary_size) / (2 * blend)
         base_ratio = max(0.0, min(1.0, base_ratio))
-        if self.is_overloaded(timestamp):
+        if self.is_overloaded(arousal):
             base_ratio = min(1.0, base_ratio + config.STRESS_REGRESSION_BABBLE_BONUS)
         return base_ratio
 
@@ -311,7 +258,7 @@ class InstinctSystem:
         input_text: str,
         known_syllables: List["KnownSyllable"],
         vocabulary_size: int,
-        timestamp: Optional[float] = None,
+        arousal: float = 0.0,
         mastered_words: Optional[List["KnownWord"]] = None,
         exploration_word: Optional["KnownWord"] = None,
     ) -> BabbleResult:
@@ -341,7 +288,7 @@ class InstinctSystem:
         """
         import random
 
-        babble_ratio = self.get_babble_ratio(vocabulary_size, timestamp)
+        babble_ratio = self.get_babble_ratio(vocabulary_size, arousal)
 
         if len(known_syllables) < config.BABBLING_MIN_KNOWN_SYLLABLES:
             # Физически нечем лепетать -> остаётся только эхо-компонента

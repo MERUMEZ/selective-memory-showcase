@@ -49,6 +49,7 @@ BASELINE_JOY = getattr(config, "MOOD_BASELINE_JOY", 0.1)
 BASELINE_CURIOSITY = getattr(config, "MOOD_BASELINE_CURIOSITY", 0.5)
 BASELINE_ANXIETY = getattr(config, "MOOD_BASELINE_ANXIETY", 0.1)
 BASELINE_AFFECTION = getattr(config, "MOOD_BASELINE_AFFECTION", 0.1)
+BASELINE_AROUSAL = getattr(config, "MOOD_BASELINE_AROUSAL", 0.1)
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -62,6 +63,7 @@ class MoodDelta:
     curiosity: float = 0.0
     anxiety: float = 0.0
     affection: float = 0.0
+    arousal: float = 0.0
 
 
 @dataclass
@@ -82,7 +84,7 @@ class Appraisal:
                             Именно ОШИБКА, а не сама валентность:
                             привычная похвала не должна радовать;
     coping          [0..1]  насколько организм справляется —
-                            1 - current_stress (InstinctSystem).
+                            обратная сторона возбуждения (Mood.coping).
     """
     novelty: float = 0.0
     goal_congruence: float = 0.0
@@ -96,6 +98,7 @@ class MoodState:
     curiosity: float
     anxiety: float
     affection: float
+    arousal: float = BASELINE_AROUSAL
     decay_applied: bool = False
 
     def dominant_emotion(self) -> str:
@@ -181,6 +184,9 @@ class Mood:
         self.curiosity = BASELINE_CURIOSITY
         self.anxiety = BASELINE_ANXIETY
         self.affection = BASELINE_AFFECTION
+        # Единая ось нагрузки: раньше это же состояние жило вторым
+        # экземпляром как InstinctSystem.current_stress
+        self.arousal = BASELINE_AROUSAL
 
     # ----------------------------------------------------------------------
     # Обновление вектора при стимуле
@@ -194,6 +200,7 @@ class Mood:
         self.curiosity = _clamp(self.curiosity + delta.curiosity)
         self.anxiety = _clamp(self.anxiety + delta.anxiety)
         self.affection = _clamp(self.affection + delta.affection)
+        self.arousal = _clamp(self.arousal + delta.arousal)
 
         state = self.get_state(decay_applied=False)
 
@@ -244,8 +251,38 @@ class Mood:
             joy=good * config.MOOD_JOY_GAIN,
             anxiety=(bad + novelty * helpless) * config.MOOD_ANXIETY_GAIN,
             affection=good * config.MOOD_AFFECTION_GAIN,
+            # ВОЗБУЖДЕНИЕ — нагрузка на организм. Её создаёт всё, что
+            # требует внимания: и новизна входа, и величина ошибки
+            # предсказания награды, независимо от её знака. Раньше эта же
+            # величина накапливалась в InstinctSystem от emotion_score,
+            # то есть от подсчёта капса и восклицательных знаков — прокси,
+            # причём плохое.
+            arousal=(novelty + abs(congruence)) * config.MOOD_AROUSAL_GAIN,
         )
         return self.apply_stimulus(delta, log=log)
+
+    def coping(self) -> float:
+        """
+        Насколько организм справляется — обратная сторона возбуждения.
+
+        Единая точка: раньше это считалось как 1 - current_stress по
+        состоянию из другого модуля, и получалось, что тревога была
+        производной от стресса, которая никуда не идёт.
+        """
+        return _clamp(1.0 - self.arousal)
+
+    def is_overloaded(self) -> bool:
+        """Перегрузка — включается режим самосохранения (мимикрия, лепет)."""
+        return self.arousal > config.STRESS_OVERLOAD_THRESHOLD
+
+    def effective_plasticity_threshold(self) -> float:
+        """
+        Порог записи в память с поправкой на нагрузку: перегруженный
+        организм становится менее впечатлительным. Прежде считалось в
+        InstinctSystem.get_effective_plasticity_threshold.
+        """
+        modifier = self.arousal * config.PLASTICITY_STRESS_MODIFIER
+        return min(1.0, config.BASE_PLASTICITY_THRESHOLD + modifier)
 
     # ----------------------------------------------------------------------
     # Затухание к Baseline (вызывается на каждом тике)
@@ -266,6 +303,7 @@ class Mood:
         self.affection = _clamp(
             self.affection - self.affection_decay_rate * (self.affection - BASELINE_AFFECTION)
         )
+        self.arousal = _clamp(self.arousal - self.decay_rate * (self.arousal - BASELINE_AROUSAL))
 
         state = self.get_state(decay_applied=True)
 
@@ -288,5 +326,6 @@ class Mood:
             curiosity=self.curiosity,
             anxiety=self.anxiety,
             affection=self.affection,
+            arousal=self.arousal,
             decay_applied=decay_applied,
         )
