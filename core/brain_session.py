@@ -400,18 +400,55 @@ class BrainSession:
             timestamp=brain_time,
         )
 
-        # 10. Spike -> немедленный узел LTM
+        # 9b. ПРОТИВОРЕЧИЕ КАК ПОВОД ЗАПИСАТЬ.
+        #
+        # Поправка по своей природе НЕ УДИВИТЕЛЬНА: та же фраза, одно слово
+        # другое. Замер на живой базе: "мою собаку зовут бобик" даёт
+        # плотность 0.165 при пороге 0.35 — спайк не срабатывает, узел не
+        # пишется, и вытеснять устаревшее оказывается НЕЧЕМ. Пользователь
+        # поправляет бота, а в памяти остаётся старое имя.
+        #
+        # Но это тоже ошибка предсказания, просто не на уровне слов, а на
+        # уровне утверждения: организм ожидал "Рекс", а услышал "Бобик".
+        # Лексического удивления здесь нет, пропозициональное — максимально.
+        # Поэтому найденное противоречие само по себе является основанием
+        # записать, независимо от спайк-гейта.
+        superseded = self.memory.find_superseded(
+            user_input, explicit_correction=feedback_valence < 0
+        )
+
+        # 10. Spike ИЛИ противоречие -> немедленный узел LTM
         memory_written = False
-        if amygdala_result.is_spike_triggered:
+        if amygdala_result.is_spike_triggered or superseded:
+            # Вес узла обычно равен информационной плотности сообщения. Но
+            # поправка неудивительна по природе, и такой узел рождался бы
+            # слабым (замер: вес 0.17 против 0.52 у устаревшего) — то есть
+            # запись состоялась бы, а устаревший факт всё равно выигрывал
+            # бы поиск. Поэтому новая версия НАСЛЕДУЕТ вес того, что
+            # заменяет: это тот же факт, обновлённый, и он вправе занять
+            # место предшественника. Ничего не раздувается — вес только
+            # передаётся, а не создаётся.
+            node_weight = amygdala_result.total_density
+            if superseded:
+                inherited = max(
+                    (self.memory.db.get_node(n.id)["weight"] for n in superseded),
+                    default=0.0,
+                )
+                node_weight = max(node_weight, inherited)
+
             new_node_id = self.memory.save_connection(
                 context=user_input,
                 response=cortex_response.text,
-                weight=amygdala_result.total_density,
+                weight=node_weight,
                 timestamp=brain_time,
             )
             memory_written = True
             self.activation_state.set_last_active(new_node_id)
-            logger.info("[BRAIN STATE] Spike Triggered! New memory node formed.")
+            logger.info(
+                "[BRAIN STATE] Узел записан: %s",
+                "спайк" if amygdala_result.is_spike_triggered
+                else f"противоречие с {[n.id for n in superseded]}",
+            )
 
             # СВЯЗЬ ПО КОНТЕКСТУ: если в этом же обмене был найден узел
             # через MEMORY HIT, связываем его с новым spike-узлом.
