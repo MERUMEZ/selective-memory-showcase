@@ -94,6 +94,44 @@ def test_mastered_word_is_spoken_back(mg, instincts):
     )
 
 
+def test_fully_understood_input_gets_no_babble(mg, instincts):
+    """
+    Лепет означает "мне есть что сказать, но нет слова". Если организм
+    понял ВСЁ услышанное, договаривать нечего — ответ должен быть ровно
+    из своих слов, без довеска.
+
+    Регрессия на наблюдение: на "привет" бот отвечал "привет дорщена" и
+    физически не мог сказать одно слово.
+    """
+    teach(mg, "привет", times=6)
+
+    result = instincts.generate_blended_mimicry_response(
+        "привет", syllables(mg), mg.get_vocabulary_size(),
+        mastered_words=mg.get_mastered_words_in("привет"),
+    )
+
+    assert result.text.strip() == "привет", (
+        f"всё услышанное узнано, но ответ {result.text!r} содержит лишнее"
+    )
+
+
+def test_partially_understood_input_babbles_the_rest(mg, instincts):
+    """А вот если часть фразы не узнана — лепет уместен: мысль есть, слова нет."""
+    # Слогов должно быть не меньше BABBLING_MIN_KNOWN_SYLLABLES, иначе
+    # лепетать физически нечем и babble_ratio обнуляется
+    teach(mg, "мама папа дом кот", times=6)
+    assert len(syllables(mg)) >= config.BABBLING_MIN_KNOWN_SYLLABLES
+
+    result = instincts.generate_blended_mimicry_response(
+        "мама папа построили большое здание", syllables(mg), mg.get_vocabulary_size(),
+        mastered_words=mg.get_mastered_words_in("мама папа построили большое здание"),
+    )
+
+    words = result.text.split()
+    assert "мама" in words and "папа" in words
+    assert len(words) > 2, "неузнанную часть фразы организм должен добрать лепетом"
+
+
 def test_telegraphic_speech_uses_only_known_words(mg, instincts):
     teach(mg, "мама папа дом", times=6)
     vocab = mg.get_vocabulary_size()

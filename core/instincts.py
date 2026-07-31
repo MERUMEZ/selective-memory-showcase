@@ -369,20 +369,27 @@ class InstinctSystem:
             )
             spoken_words = random.sample(user_words, k=min(max_echo, len(user_words)))
 
-        # Лепет добирает реплику: он уместен, пока словарь мал, но не
-        # должен забивать уже узнанные слова, если их набралось достаточно.
+        # Лепет — это "мне есть что сказать, но нет слова". Поэтому он
+        # добирает ТОЛЬКО неузнанную часть реплики: если организм понял
+        # всё, что услышал, договаривать нечего и лепет неуместен.
+        #
+        # Раньше лепет приклеивался безусловно, и на "привет" бот отвечал
+        # "привет дорщена" — не мог сказать одно слово, даже когда знал
+        # ровно его. Ребёнок на однословной стадии отвечает "привет" и
+        # замолкает; лепет появляется там, где мысль есть, а слова нет.
+        unrecognised = max(0, len(user_words) - len(mastered_words))
+
         babble_words: List[str] = []
-        babble_allowed = (
+        can_babble = (
             babble_ratio > 0.0
             and len(known_syllables) >= config.BABBLING_MIN_KNOWN_SYLLABLES
-            and len(spoken_words) < config.MIMICRY_MAX_KNOWN_WORDS
         )
-        if babble_allowed:
-            n_babble_words = max(1, round(config.BABBLING_WORDS_PER_RESPONSE * babble_ratio))
-            if spoken_words:
-                # Рядом со своим словом лепета должно быть немного —
-                # иначе узнанное слово в нём тонет.
-                n_babble_words = 1
+        if can_babble and (unrecognised > 0 or not user_words):
+            n_babble_words = max(
+                1,
+                round(min(unrecognised or config.BABBLING_WORDS_PER_RESPONSE,
+                          config.BABBLING_WORDS_PER_RESPONSE) * babble_ratio),
+            )
             babble_words, babble_ids = self._make_babble_words(known_syllables, n_babble_words)
             used_ids.extend(babble_ids)
 
