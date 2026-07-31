@@ -183,6 +183,20 @@ class BrainSession:
 
         self.idle_ticks_without_event: int = 0
 
+        # Один "мозг" обслуживается из РАЗНЫХ ПОТОКОВ: bot.py уводит в
+        # asyncio.to_thread и обработку сообщения пользователя, и фоновый
+        # idle-тик, и /status, и выгрузку сессии. Все они трогают одно и то
+        # же: соединение SQLite, буфер STM, cortex.last_action_trace, часы.
+        #
+        # Сценарий вполне достижимый: юзер пишет на 46-й секунде молчания,
+        # ровно когда фоновый тик начал фазу сна — прунинг удаляет узлы
+        # под ногами у идущего поиска.
+        #
+        # Не RLock: ни один из этих методов не вызывает другой, поэтому
+        # повторный вход невозможен, а обычный Lock честнее ловит ошибки,
+        # если такой вызов однажды появится.
+        self._lock = threading.Lock()
+
         logger.info(
             "[BRAIN SESSION] Инициализирована сессия db_path=%s (self_node=%s, user_node=%s)",
             self.db_path, self.self_node_id, self.user_node_id,
@@ -195,8 +209,18 @@ class BrainSession:
     def process_message(self, user_input: str) -> BrainResponse:
         """
         Обрабатывает одно сообщение пользователя и возвращает BrainResponse
-        (текст ответа + debug-словарь). Полный перенос логики из
-        main.py::run() (тело while-цикла), без input()/print().
+        (текст ответа + debug-словарь).
+
+        Сообщение пользователя имеет приоритет: оно ЖДЁТ блокировку, а не
+        отказывается от неё. Уступает наоборот фоновый тик (см. run_idle_tick).
+        """
+        with self._lock:
+            return self._process_message_unlocked(user_input)
+
+    def _process_message_unlocked(self, user_input: str) -> BrainResponse:
+        """
+        Тело обработки сообщения. Вызывать только под self._lock —
+        трогает SQLite, STM, last_action_trace и часы.
         """
         if not user_input:
             return BrainResponse(text="", debug={"skipped": True})
@@ -460,6 +484,10 @@ class BrainSession:
         смешения: в отчёте нужна стабильная картинка, а не разное число
         при двух подряд вызовах /status.
         """
+        with self._lock:
+            return self._status_report_unlocked()
+
+    def _status_report_unlocked(self) -> str:
         mastered = self.memory.get_vocabulary_size()
         exposed = self.memory.get_exposed_vocabulary_size()
 
@@ -546,7 +574,26 @@ class BrainSession:
                следующем boredom-тике.
 
         В остальных случаях (ничего не произошло) возвращает None.
+
+        УСТУПАЕТ ПОЛЬЗОВАТЕЛЮ: если сессия сейчас занята обработкой
+        сообщения, тик молча пропускается, а не встаёт в очередь. Иначе
+        человек ждал бы, пока фоновая фаза сна сходит в LLM (до 30 секунд
+        таймаута) — при том что тик по своей природе необязателен и
+        повторится через BOT_SCHEDULER_TICK_SECONDS.
         """
+        if not self._lock.acquire(blocking=False):
+            logger.debug(
+                "[IDLE SKIP] db_path=%s: сессия занята пользователем -> тик пропущен",
+                self.db_path,
+            )
+            return None
+        try:
+            return self._run_idle_tick_unlocked(delta_seconds)
+        finally:
+            self._lock.release()
+
+    def _run_idle_tick_unlocked(self, delta_seconds: float) -> Optional[BrainIdleEvent]:
+        """Тело фонового тика. Вызывать только под self._lock."""
         brain_time = self.clock.advance_by(delta_seconds)
         idle_seconds = self.clock.seconds_since_last_activity()
 
@@ -596,6 +643,13 @@ class BrainSession:
         return None
 
     def close(self) -> None:
-        """Освобождает ресурсы (закрывает соединение с БД через Cortex)."""
-        self.cortex.close()
-        logger.info("[BRAIN SESSION] Сессия закрыта (db_path=%s)", self.db_path)
+        """
+        Освобождает ресурсы (закрывает соединение с БД через Cortex).
+
+        Тоже под блокировкой: выгрузка сессии по бездействию идёт из
+        фонового тика, и закрыть SQLite посреди чужого process_message
+        значило бы уронить обработку сообщения пользователя на середине.
+        """
+        with self._lock:
+            self.cortex.close()
+            logger.info("[BRAIN SESSION] Сессия закрыта (db_path=%s)", self.db_path)
