@@ -328,8 +328,16 @@ class BrainSession:
             self.activation_state.append_window_node(new_node_id)
 
         # 11. ИЗБИРАТЕЛЬНАЯ КОНСОЛИДАЦИЯ (STM -> LTM)
+        #
+        # Консолидация запускается ТОЛЬКО по заполнению буфера. Раньше её
+        # дёргал ещё и спайк — и это вытирало кратковременную память
+        # (consume_all) ровно в тот момент, когда разговор стал интересным.
+        # Замер показывал, что STM пуста после 39 сообщений из 40, то есть
+        # бот практически никогда не видел нити разговора. При этом спайк
+        # НИЧЕГО не терял от такой отвязки: он уже записал текущий обмен
+        # собственным узлом LTM шагом выше (шаг 10).
         consolidation_event = None
-        if self.stm.is_full() or amygdala_result.is_spike_triggered:
+        if self.stm.is_full():
             episode = self.stm.consume_all()
             result = self.memory.consolidate_from_stm(
                 episode,
@@ -378,10 +386,16 @@ class BrainSession:
         # продолжительное "молчание по существу".
         auto_sleep_reason = None
         sleep_report_text = None
-        if total_nodes >= config.SLEEP_AUTO_TRIGGER_NODE_COUNT:
+        # Считаем ТОЛЬКО узлы-воспоминания. Раньше здесь стоял total_nodes
+        # по всем типам, включая лексику, — а словарь набирает сотни узлов
+        # за первый десяток сообщений, поэтому порог пробивался на 9-м
+        # сообщении и сон запускался на каждое следующее (см.
+        # Database.count_memory_nodes).
+        memory_nodes = self.memory.db.count_memory_nodes()
+        if memory_nodes >= config.SLEEP_AUTO_TRIGGER_NODE_COUNT:
             auto_sleep_reason = (
-                f"переполнение памяти ({total_nodes} >= "
-                f"{config.SLEEP_AUTO_TRIGGER_NODE_COUNT} узлов)"
+                f"переполнение памяти ({memory_nodes} >= "
+                f"{config.SLEEP_AUTO_TRIGGER_NODE_COUNT} узлов-воспоминаний)"
             )
         elif self.idle_ticks_without_event >= AUTO_SLEEP_IDLE_TICKS:
             auto_sleep_reason = (
