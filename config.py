@@ -713,32 +713,6 @@ BOT_SCHEDULER_TICK_SECONDS = _get_float("BOT_SCHEDULER_TICK_SECONDS", 5.0)
 
 
 # ==========================================================================
-# 20. BILLING — подписка через Telegram Stars (Free/Premium тарифы)
-# ==========================================================================
-# Отдельная SQLite БД (НЕ per-user brain.db!) — платёжные данные не должны
-# смешиваться с когнитивными данными пользователя: разные жизненные циклы,
-# разные требования к консистентности (см. audit.txt, раздел B).
-BILLING_DB_PATH = _get_str("BILLING_DB_PATH", str(STORAGE_DIR / "billing.db"))
-
-# Сколько обычных текстовых сообщений в сутки (UTC) доступно бесплатному
-# пользователю без Premium-подписки. Считается через QuotaMiddleware.
-FREE_TIER_DAILY_MESSAGE_LIMIT = _get_int("FREE_TIER_DAILY_MESSAGE_LIMIT", 30)
-
-# Тарифы Premium-подписки в Telegram Stars (валюта "XTR", встроенная,
-# без внешнего платёжного провайдера).
-PREMIUM_STARS_PRICE_30D = _get_int("PREMIUM_STARS_PRICE_30D", 150)
-PREMIUM_DAYS_30D = _get_int("PREMIUM_DAYS_30D", 30)
-PREMIUM_STARS_PRICE_90D = _get_int("PREMIUM_STARS_PRICE_90D", 400)
-PREMIUM_DAYS_90D = _get_int("PREMIUM_DAYS_90D", 90)
-
-# /sleep дёргает LLM (SLEEP_CONSOLIDATION_PROMPT + SELF_MODEL_EVOLUTION_PROMPT),
-# поэтому по умолчанию считаем его в тот же дневной лимит, что и обычные
-# сообщения — иначе бесплатный пользователь мог бы обходить лимит, вызывая
-# /sleep вместо обычных сообщений.
-BILLING_GATE_SLEEP_COMMAND = _get_str("BILLING_GATE_SLEEP_COMMAND", "true").lower() == "true"
-
-
-# ==========================================================================
 # Автоматически создаём нужные директории при импорте конфига
 # ==========================================================================
 Path(STORAGE_DIR).mkdir(parents=True, exist_ok=True)
