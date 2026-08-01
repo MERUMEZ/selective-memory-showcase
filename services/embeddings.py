@@ -40,7 +40,7 @@ EMBEDDINGS_ENABLED=false — encode() возвращает None, а MemoryGraph.
 import threading
 from typing import List, Optional, Sequence
 
-import config
+from memory.settings import MemorySettings
 from storage.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -56,6 +56,18 @@ _FUNCTION_WORDS = {
     "тебя", "тебе", "про", "о", "об", "при", "же", "уж", "вот", "так", "там",
     "тут", "ещё", "еще", "уже", "бы", "чтобы", "если", "когда", "где",
 }
+
+# Настройки модуля: приложение может подменить их до первого
+# обращения через configure(). По умолчанию — библиотечные.
+_settings = MemorySettings()
+
+
+def configure(settings: MemorySettings) -> None:
+    """Задаёт настройки эмбеддингов (путь к модели, включённость)."""
+    global _settings, _model, _load_failed
+    _settings = settings
+    _model, _load_failed = None, False
+
 
 _model = None
 _load_failed = False
@@ -76,7 +88,7 @@ def _load_model():
         if _model is not None or _load_failed:
             return _model
 
-        if not config.EMBEDDINGS_ENABLED:
+        if not _settings.embeddings_enabled:
             _load_failed = True
             logger.info("[EMBEDDINGS] Отключены настройкой — поиск останется строковым")
             return None
@@ -92,17 +104,17 @@ def _load_model():
             return None
 
         try:
-            _model = Navec.load(config.EMBEDDING_MODEL_PATH)
+            _model = Navec.load(_settings.embedding_model_path)
         except Exception as exc:  # noqa: BLE001
             _load_failed = True
             logger.warning(
                 "[EMBEDDINGS] Не удалось загрузить модель (%s): %s — "
                 "поиск остаётся строковым",
-                config.EMBEDDING_MODEL_PATH, exc,
+                _settings.embedding_model_path, exc,
             )
             return None
 
-        logger.info("[EMBEDDINGS] Модель загружена: %s", config.EMBEDDING_MODEL_PATH)
+        logger.info("[EMBEDDINGS] Модель загружена: %s", _settings.embedding_model_path)
         return _model
 
 

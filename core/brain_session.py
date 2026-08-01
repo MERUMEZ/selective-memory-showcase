@@ -30,6 +30,8 @@ from core.perception import Perception
 from core.persona_memory import PersonaMemory
 from memory.graph_memory import MemoryGraph
 from memory.database import Database
+from memory.settings import MemorySettings
+from services import embeddings
 from memory.sleep_cycle import SleepCycle
 from memory.working_memory import WorkingMemory
 from storage.utils.logger import get_logger
@@ -229,14 +231,20 @@ class BrainSession:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or config.BRAIN_DB_PATH
 
-        db = Database(db_path=self.db_path)
-        self.memory = MemoryGraph(db=db)
+        # Единственное место, где глобальный config встречается с ядром
+        # памяти. Дальше вниз идут только settings — поэтому memory/
+        # можно вынуть из проекта, а config останется здесь, в приложении.
+        self.settings = MemorySettings.from_module(config)
+        embeddings.configure(self.settings)
+
+        db = Database(db_path=self.db_path, settings=self.settings)
+        self.memory = MemoryGraph(db=db, settings=self.settings)
         # Самообраз, эволюция личности и выбор темы для проактива живут в
         # ПЕРСОНЕ, а не в памяти: библиотеке памяти эти понятия не нужны.
         self.persona = PersonaMemory(memory=self.memory)
         self.self_node_id, self.user_node_id = self.persona.ensure_self_and_user_nodes()
 
-        self.stm = WorkingMemory()
+        self.stm = WorkingMemory(settings=self.settings)
         self.instincts = InstinctSystem()
         self.amygdala = Amygdala()
         self.cortex = Cortex(
