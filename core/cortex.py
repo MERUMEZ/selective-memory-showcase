@@ -793,6 +793,11 @@ class Cortex:
         return chosen
 
     def _resolve_speech_stage(self, vocabulary_size: int) -> int:
+        # Стадии можно выключить целиком: разработчику, встраивающему память
+        # в своего персонажа, лепет не нужен — тот должен говорить сразу.
+        if not config.SPEECH_STAGES_ENABLED:
+            return 3
+
         """
         Определяет текущую стадию речевого развития по размеру ЗАКРЕПЛЁННОГО
         словаря (см. MemoryGraph.get_vocabulary_size), с вероятностной

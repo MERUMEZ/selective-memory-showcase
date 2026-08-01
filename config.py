@@ -918,6 +918,35 @@ CONCEPT_NAME_MIN_LENGTH = _get_int("CONCEPT_NAME_MIN_LENGTH", 2)
 CONCEPT_NAME_MAX_LENGTH = _get_int("CONCEPT_NAME_MAX_LENGTH", 40)
 
 
+# --------------------------------------------------------------------------
+# РЕЖИМ ДЕМОНСТРАЦИИ и ОТКЛЮЧЕНИЕ РЕЧЕВЫХ СТАДИЙ.
+#
+# Речевые стадии — единственная ВИДИМАЯ демонстрация того, что выученный
+# словарь влияет на речь. Без них "динамическая память" внешне неотличима
+# от обычного бота с историей: вся суть прячется под капот. Поэтому по
+# умолчанию они включены.
+#
+# Но исследовательская шкала слишком медленная для показа: замер даёт в
+# среднем 22 сообщения до первой связной фразы, то есть целый вечер.
+# Человек должен увидеть весь путь за одну сессию.
+#
+# SPEECH_DEMO_PACE сжимает шкалу, НЕ ломая механику. Подобрано замером на
+# пяти сидах (среднее число сообщений до выхода из лепета):
+#     нач.вес 0.12, порог 25, ширина 15  -> 22.4   (исследовательский)
+#     нач.вес 0.15, порог 14, ширина 6   ->  9.8   <- демонстрационный
+#     нач.вес 0.20, порог 12, ширина 5   ->  1.8   (лепет вообще не видно)
+# Ключевой рычаг оказался не в пороге стадии (он двигает среднее всего с
+# 22 до 16), а в том, за сколько употреблений осваивается слово: при
+# начальном весе 0.15 хватает двух вместо трёх.
+#
+# SPEECH_STAGES_ENABLED=false выключает стадии совсем: разработчику,
+# встраивающему память в своего NPC, лепет не нужен — персонаж должен
+# говорить сразу.
+# --------------------------------------------------------------------------
+SPEECH_STAGES_ENABLED = _get_str("SPEECH_STAGES_ENABLED", "true").lower() == "true"
+SPEECH_DEMO_PACE = _get_str("SPEECH_DEMO_PACE", "true").lower() == "true"
+
+
 # ==========================================================================
 # 17. LEXICAL ACQUISITION & BABBLING — освоение языка "с нуля" (слоги/слова)
 # ==========================================================================
@@ -929,7 +958,9 @@ LEXICAL_ACQUISITION_ENABLED = _get_str("LEXICAL_ACQUISITION_ENABLED", "true").lo
 
 # Начальный вес нового word-узла (низкий — слово ещё не "усвоено",
 # требует повторения, как у настоящего ребёнка)
-WORD_NODE_INITIAL_WEIGHT = _get_float("WORD_NODE_INITIAL_WEIGHT", 0.12)
+WORD_NODE_INITIAL_WEIGHT = _get_float(
+    "WORD_NODE_INITIAL_WEIGHT", 0.15 if SPEECH_DEMO_PACE else 0.12
+)
 
 # Шаг усиления веса word-узла при каждом повторном появлении слова
 WORD_NODE_REINFORCE_STEP = _get_float("WORD_NODE_REINFORCE_STEP", 0.04)
@@ -1005,6 +1036,9 @@ SURPRISE_LEXICAL_WEIGHT = _get_float("SURPRISE_LEXICAL_WEIGHT", 0.6)
 SURPRISE_STRUCTURAL_WEIGHT = _get_float("SURPRISE_STRUCTURAL_WEIGHT", 0.4)
 
 
+
+
+
 # ==========================================================================
 # 17b. SPEECH STAGE GATING — стадии речевого развития (continuous, с зоной смешения)
 # ==========================================================================
@@ -1041,7 +1075,9 @@ VOCABULARY_MASTERY_MIN_WEIGHT = _get_float("VOCABULARY_MASTERY_MIN_WEIGHT", 0.18
 # --------------------------------------------------------------------------
 # Stage 0 (довербальный): vocab < SPEECH_STAGE_0_MAX_VOCAB -> только лепет/эхолалия,
 # LLM и поиск по LTM не запускаются вообще.
-SPEECH_STAGE_0_MAX_VOCAB = _get_int("SPEECH_STAGE_0_MAX_VOCAB", 25)
+SPEECH_STAGE_0_MAX_VOCAB = _get_int(
+    "SPEECH_STAGE_0_MAX_VOCAB", 14 if SPEECH_DEMO_PACE else 25
+)
 # Stage 1 (раннее детство/телеграфная речь): vocab < SPEECH_STAGE_1_MAX_VOCAB ->
 # LLM разрешена, но только ОДНО простое предложение, без абстракций.
 SPEECH_STAGE_1_MAX_VOCAB = _get_int("SPEECH_STAGE_1_MAX_VOCAB", 150)
@@ -1053,7 +1089,9 @@ SPEECH_STAGE_2_MAX_VOCAB = _get_int("SPEECH_STAGE_2_MAX_VOCAB", 400)
 # Stage 3 (свободная речь): vocab >= SPEECH_STAGE_2_MAX_VOCAB -> обычные ограничения.
 # Ширина зоны смешения вокруг каждой границы (в узлах словаря). Внутри этой
 # зоны переход происходит ВЕРОЯТНОСТНО (линейно растущий шанс), а не резко.
-SPEECH_STAGE_BLEND_WIDTH = _get_int("SPEECH_STAGE_BLEND_WIDTH", 15)
+SPEECH_STAGE_BLEND_WIDTH = _get_int(
+    "SPEECH_STAGE_BLEND_WIDTH", 6 if SPEECH_DEMO_PACE else 15
+)
 
 # ==========================================================================
 # 18. RETROSPECTIVE CORRECTION — устойчивость к сарказму и ложной похвале

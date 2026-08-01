@@ -94,8 +94,14 @@ def test_calm_organism_still_explores_sometimes(mg):
 
 def test_exploration_picks_the_edge_of_competence(mg):
     """Пробуется САМОЕ БЛИЗКОЕ к порогу — там, где и происходит учение."""
-    teach(mg, "почти", times=2)     # ближе к порогу
-    teach(mg, "едва", times=1)      # дальше от порога
+    # Веса задаются НАПРЯМУЮ, а не числом повторений: сколько употреблений
+    # нужно до освоения, зависит от темпа (SPEECH_DEMO_PACE), и фикстура,
+    # завязанная на счёт повторов, ломается при его смене.
+    mastery = config.VOCABULARY_MASTERY_MIN_WEIGHT
+    mg.db.upsert_lexical_node("word", "почти", initial_weight=mastery - 0.01,
+                              reinforce_step=0.0, timestamp=0.0)
+    mg.db.upsert_lexical_node("word", "едва", initial_weight=mastery - 0.06,
+                              reinforce_step=0.0, timestamp=0.0)
     phrase = "почти едва"
 
     cortex = Cortex(memory=mg)
