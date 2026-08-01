@@ -57,6 +57,49 @@ _session_manager: SessionManager = None  # type: ignore[assignment]
 _scheduler_task: asyncio.Task = None  # type: ignore[assignment]
 
 
+# Сценарий /demo. Порядок продуман, а не случаен:
+#   1-6    повторяющиеся бытовые реплики — набирается словарь, лепет
+#          сменяется отдельными словами;
+#   7-8    важный факт и похвала за него — включается подкрепление;
+#   9-15   к факту ВОЗВРАЩАЮТСЯ и хвалят снова, вперемешку с рутиной.
+#
+# Возвращения не для красоты: удержание держится на стабильности, а она
+# растёт от ВСПОМИНАНИЯ, не от записи. Замер на этом сценарии: после
+# недели молчания выживает ровно один эпизод — телефон (вес 0.14), а
+# рутина и даже сама похвала уходят. Более короткий сценарий не
+# показывает ничего: за пятнадцать реплик стабильность не набирается, и
+# через неделю пусто везде, то есть разницы не видно.
+DEMO_SCRIPT = [
+    "привет как дела",
+    "меня зовут Паша",
+    "привет как дела",
+    "я люблю котов",
+    "меня зовут Паша",
+    "я люблю котов",
+    "мой телефон восемь девятьсот двенадцать",
+    "молодец, это важно запомнить",
+    "сегодня обычная погода",
+    "какой у меня телефон",
+    "верно, отлично помнишь",
+    "сегодня обычная погода",
+    "напомни мой телефон",
+    "молодец",
+    "сегодня обычная погода",
+]
+
+HELP_TEXT = (
+    "Я расту и учусь языку с нуля — сначала лепечу, потом отвечаю фразами.\n\n"
+    "/demo — прогнать сценарий обучения и увидеть путь от лепета к речи\n"
+    "/why — почему последнее сообщение записалось или нет, числами\n"
+    "/skip 7 — промотать неделю и посмотреть, что пережило забывание\n"
+    "/status — чему я уже научился\n"
+    "/sleep — фаза консолидации памяти\n\n"
+    "Хвали меня («молодец», «верно») — то, за что хвалят, я помню дольше. "
+    "Это не метафора: разрыв между похвалённым и обычным через две недели "
+    "составляет пятьдесят процентных пунктов."
+)
+
+
 def get_manager() -> SessionManager:
     if _session_manager is None:
         raise RuntimeError("SessionManager не инициализирован (main() не был вызван)")
@@ -79,8 +122,11 @@ async def handle_start(message: Message) -> None:
         "Сначала я умею только лепетать — слова закрепляются примерно "
         "с третьего употребления, так что повторяй их, и я начну "
         "отвечать фразами.\n\n"
-        "/status — посмотреть, чему я уже научился\n"
-        "/sleep — запустить фазу консолидации памяти (сон)"
+        "/demo — прогнать сценарий обучения и увидеть весь путь сразу\n"
+        "/why — почему я запомнил или не запомнил последнее\n"
+        "/skip 7 — промотать неделю и посмотреть, что пережило\n"
+        "/status — чему я уже научился\n"
+        "/help — всё то же самое подробнее"
     )
 
 
@@ -110,6 +156,76 @@ async def handle_sleep(message: Message) -> None:
     response = await asyncio.to_thread(session.process_message, "/sleep")
 
     await message.answer(response.text)
+
+
+@router.message(Command("why"))
+async def handle_why(message: Message) -> None:
+    """
+    Разбор последнего сообщения: удивился ли, записал ли, почему.
+
+    Главная команда демонстрации. Всё остальное можно показать словами, а
+    вот что решение о записи РЕАЛЬНОЕ, а порог не декоративный — видно
+    только числами.
+    """
+    manager = get_manager()
+    session = await asyncio.to_thread(manager.get_or_create, message.from_user.id)
+    await message.answer(await asyncio.to_thread(session.explain_last))
+
+
+@router.message(Command("skip"))
+async def handle_skip(message: Message) -> None:
+    """
+    /skip [суток] — промотать время и показать, что пережило забывание.
+
+    Без этого главную идею показать нельзя: разрыв между важным и рутиной
+    раскрывается за недели, а у демонстрации есть минута.
+    """
+    parts = (message.text or "").split()
+    try:
+        days = float(parts[1]) if len(parts) > 1 else 7.0
+    except ValueError:
+        await message.answer("Формат: /skip 7 — промотать неделю.")
+        return
+
+    if not 0 < days <= 365:
+        await message.answer("Разумный диапазон — от одних суток до года.")
+        return
+
+    manager = get_manager()
+    session = await asyncio.to_thread(manager.get_or_create, message.from_user.id)
+    await message.answer(await asyncio.to_thread(session.skip_forward, days))
+
+
+@router.message(Command("demo"))
+async def handle_demo(message: Message) -> None:
+    """
+    Прогнать короткий сценарий обучения и показать путь от лепета к фразам.
+
+    Сценарий не случайный: сначала повторяющиеся реплики (чтобы набрался
+    словарь), потом важный факт с похвалой, потом рутина. На этом наборе
+    видно всё сразу — и освоение речи, и избирательность записи.
+    """
+    manager = get_manager()
+    user_id = message.from_user.id
+    session = await asyncio.to_thread(manager.get_or_create, user_id)
+
+    await message.answer("Учу себя на сценарии, это займёт несколько секунд...")
+
+    lines = []
+    for step, text in enumerate(DEMO_SCRIPT, start=1):
+        response = await asyncio.to_thread(session.process_message, text)
+        lines.append(f"{step:2}. ты: {text}\n    я: {response.text[:70]}")
+
+    await message.answer(
+        "\n".join(lines)
+        + "\n\nТеперь /why — почему последнее не записалось, "
+        "и /skip — что от всего этого останется через неделю."
+    )
+
+
+@router.message(Command("help"))
+async def handle_help(message: Message) -> None:
+    await message.answer(HELP_TEXT)
 
 
 @router.message()

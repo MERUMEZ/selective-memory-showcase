@@ -638,6 +638,9 @@ class BrainSession:
             "emotion_score": emotion_score,
             "perplexity": amygdala_result.perplexity,
             "total_density": amygdala_result.total_density,
+            # Порог, который РЕАЛЬНО применился на этом ходу. Пересчитывать
+            # его позже нельзя: возбуждение к тому моменту уже другое.
+            "threshold_used": amygdala_result.threshold_used,
             "confidence": cortex_response.confidence,
             "stress_state": updated_stress_state,
             "spike_triggered": amygdala_result.is_spike_triggered,
@@ -656,7 +659,103 @@ class BrainSession:
             "auto_sleep_reason": auto_sleep_reason,
         }
 
+        # Последний разбор храним: команда /why отвечает на вопрос
+        # "почему ты это не запомнил" числами, а не пожатием плечами.
+        self.last_debug = debug
+
         return BrainResponse(text=response_text, is_sleep_report=False, debug=debug)
+
+    # ----------------------------------------------------------------------
+    # Демонстрация: сделать невидимое видимым
+    # ----------------------------------------------------------------------
+
+    def explain_last(self) -> str:
+        """
+        Разбор последнего сообщения: удивился ли, записал ли и почему.
+
+        Это главное, чего не показывает ни одна память-конкурент. Решение
+        "хранить или нет" обычно спрятано внутри, и пользователю остаётся
+        гадать. Здесь оно выводится числами, и по ним видно, что порог
+        реальный, а не декоративный.
+        """
+        d = getattr(self, "last_debug", None)
+        if not d:
+            return "Пока нечего разбирать — напиши мне что-нибудь."
+
+        density = d["total_density"]
+        surprise = d["perplexity"]
+        emotion = d["emotion_score"]
+        threshold = d["threshold_used"]
+
+        lines = [
+            "Что произошло с последним сообщением:",
+            "",
+            f"удивление   {surprise:.3f}   насколько это разошлось с тем, что я уже знаю",
+            f"эмоция      {emotion:.3f}   насколько меня это задело",
+            f"плотность   {density:.3f}   их среднее — то, что сравнивается с порогом",
+            f"порог       {threshold:.3f}",
+            "",
+        ]
+        if d["memory_written"]:
+            reason = "спайк" if d["spike_triggered"] else "противоречие с известным"
+            lines.append(f"ЗАПИСАНО ({reason}).")
+        else:
+            lines.append(
+                f"НЕ записано: не хватило {threshold - density:.3f} до порога. "
+                "Это рутина — повтори её с чувством или скажи что-то новое."
+            )
+
+        lines += [
+            "",
+            f"источник ответа: {d['response_source']}",
+            f"узлов в памяти: {d['total_nodes']}",
+        ]
+        return "\n".join(lines)
+
+    def skip_forward(self, days: float) -> str:
+        """
+        Промотать время на days суток и показать, что пережило забывание.
+
+        Без этого главную идею проекта нельзя показать: разрыв между
+        важным и рутинным раскрывается за недели, а на демонстрации есть
+        минута. Часы двигаются НАСТЕННЫЕ, а субъективные идут за ними с
+        ускорением — то есть моделируется настоящая пауза, а не подкрутка
+        весов руками.
+        """
+        # ТОЛЬКО эпизоды. get_top_nodes отдаёт и мета-узлы (эпоха,
+        # самообраз), и лексику — на демонстрации это выглядело так, будто
+        # "пережила" внутренняя служебная запись с числом вместо текста.
+        before = self.memory.db.count_nodes_by_type("episodic")
+        top_before = {r["id"] for r in self.memory.db.get_top_nodes_by_type("episodic", 5)}
+
+        self.clock.simulate_elapsed_wall_seconds(days * 86400.0)
+        now = self.clock.get_brain_time()
+        decayed = self.memory.apply_decay(now=now)
+
+        after = self.memory.db.count_nodes_by_type("episodic")
+        survivors = self.memory.db.get_top_nodes_by_type("episodic", 5)
+
+        lines = [
+            f"Прошло {days:g} суток твоего времени "
+            f"(моего — в {config.TIME_ACCELERATION:g} раз больше, я живу быстрее).",
+            "",
+            f"эпизодов было {before}, осталось {after}",
+            f"узлов пересчитано: {decayed}",
+            "",
+            "Что пережило:",
+        ]
+        for row in survivors:
+            mark = "" if row["id"] in top_before else "  (поднялось выше)"
+            lines.append(f"  {row['weight']:.2f}  {(row['context'] or '')[:44]}{mark}")
+        if not survivors:
+            lines.append("  ничего — всё было рутиной")
+
+        lines += [
+            "",
+            "Заметь: выжило не самое недавнее, а то, что пригождалось "
+            "и что ты отмечал как важное.",
+        ]
+        return "\n".join(lines)
 
     def get_status_report(self) -> str:
         """

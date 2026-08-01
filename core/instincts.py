@@ -218,19 +218,49 @@ class InstinctSystem:
         return base_ratio
 
     def _make_babble_words(
-        self, known_syllables: List["KnownSyllable"], n_words: int
+        self,
+        known_syllables: List["KnownSyllable"],
+        n_words: int,
+        vocabulary_size: int = 0,
     ) -> Tuple[List[str], List[int]]:
-        """Общая внутренняя логика генерации n_words лепетных слов из известных слогов."""
+        """
+        Лепетные слова из известных слогов.
+
+        ЛЕПЕТ РЕДУПЛИЦИРОВАН: "дя-дя-дя", а не "дятто". Раньше слово
+        склеивалось из НЕЗАВИСИМО выбранных слогов, и получалось
+        "паквахлебда" — на демонстрации это читается как порча текста, а
+        не как ранняя речь. Живой канонический лепет (6-10 месяцев)
+        именно повторяет один слог, и ребёнка в нём слышно сразу.
+
+        РАЗНООБРАЗИЕ РАСТЁТ СО СЛОВАРЁМ, как у детей: за каноническим
+        лепетом идёт вариативный ("дя-ба-то"), и здесь переход привязан к
+        тому же порогу, что и выход из довербальной стадии. Пустой
+        словарь -> чистое повторение; словарь у порога -> слоги свободно
+        мешаются. Отдельной константы для этого нет намеренно: чем
+        меньше ручек, тем меньше вранья про "подобрано замером".
+
+        Дефис не украшение, а разметка: он отличает лепет от опечатки.
+        """
         import random
+
         weights = [max(0.01, s.weight) for s in known_syllables]
+        threshold = max(1, config.BABBLING_VOCABULARY_THRESHOLD)
+        variegation = min(1.0, vocabulary_size / threshold)
+
         words: List[str] = []
         used_ids: List[int] = []
         for _ in range(n_words):
             syllable_count = random.randint(
                 config.BABBLING_MIN_SYLLABLES, config.BABBLING_MAX_SYLLABLES
             )
-            chosen = random.choices(known_syllables, weights=weights, k=syllable_count)
-            words.append("".join(c.text for c in chosen))
+            base = random.choices(known_syllables, weights=weights, k=1)[0]
+            chosen = [base]
+            for _ in range(syllable_count - 1):
+                if random.random() < variegation:
+                    chosen.append(random.choices(known_syllables, weights=weights, k=1)[0])
+                else:
+                    chosen.append(base)
+            words.append("-".join(c.text for c in chosen))
             used_ids.extend(c.id for c in chosen)
         return words, used_ids
 
@@ -342,7 +372,9 @@ class InstinctSystem:
                 round(min(unrecognised or config.BABBLING_WORDS_PER_RESPONSE,
                           config.BABBLING_WORDS_PER_RESPONSE) * babble_ratio),
             )
-            babble_words, babble_ids = self._make_babble_words(known_syllables, n_babble_words)
+            babble_words, babble_ids = self._make_babble_words(
+                known_syllables, n_babble_words, vocabulary_size=vocabulary_size
+            )
             used_ids.extend(babble_ids)
 
         fragments = spoken_words + babble_words
