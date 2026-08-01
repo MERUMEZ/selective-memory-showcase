@@ -662,12 +662,55 @@ class BrainSession:
         # Последний разбор храним: команда /why отвечает на вопрос
         # "почему ты это не запомнил" числами, а не пожатием плечами.
         self.last_debug = debug
+        self._persist_last_decision(user_input, amygdala_result, memory_written,
+                                    mood_snapshot, brain_time)
 
         return BrainResponse(text=response_text, is_sleep_report=False, debug=debug)
 
     # ----------------------------------------------------------------------
     # Демонстрация: сделать невидимое видимым
     # ----------------------------------------------------------------------
+
+    def _persist_last_decision(
+        self, user_input, amygdala_result, memory_written, mood_snapshot, brain_time,
+    ) -> None:
+        """
+        Кладёт разбор последнего хода в мета-узел.
+
+        Мини-апп открывает базу СТРОГО НА ЧТЕНИЕ и работает отдельным
+        процессом — до self.last_debug ему не дотянуться. А показывать он
+        должен именно это: удивление, порог и решение. Без такой записи
+        дашборд мог бы рисовать только то, что уже попало в память, то
+        есть никогда не показал бы САМОЕ ИНТЕРЕСНОЕ — почему что-то в неё
+        НЕ попало.
+
+        Одна строка, перезаписывается каждый ход. Отдельная таблица ради
+        неё не нужна: тем же механизмом хранится эпоха.
+        """
+        import json
+
+        try:
+            payload = json.dumps({
+                "text": (user_input or "")[:200],
+                "surprise": round(amygdala_result.perplexity, 4),
+                "emotion": round(amygdala_result.emotion_score, 4),
+                "density": round(amygdala_result.total_density, 4),
+                "threshold": round(amygdala_result.threshold_used, 4),
+                "written": bool(memory_written),
+                "at": brain_time,
+                "mood": {
+                    axis: round(float(getattr(mood_snapshot, axis, 0.0)), 3)
+                    for axis in ("joy", "curiosity", "anxiety", "affection", "arousal")
+                },
+            }, ensure_ascii=False)
+            self.memory.db.upsert_meta_node(
+                node_type="last_decision", content=payload,
+                weight=1.0, timestamp=brain_time,
+            )
+        except Exception:  # noqa: BLE001
+            # Витрина не должна ронять мозг: если разбор не записался,
+            # дашборд покажет прочерк, а разговор продолжится.
+            logger.exception("[BRAIN STATE] Не удалось сохранить разбор хода")
 
     def explain_last(self) -> str:
         """

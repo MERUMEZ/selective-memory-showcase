@@ -28,6 +28,7 @@
 import argparse
 import math
 import random
+import json
 import sqlite3
 import sys
 from dataclasses import dataclass, field
@@ -42,6 +43,12 @@ import config  # noqa: E402
 
 MEMORY_TYPES = ("episodic", "concept")
 LEXICAL_TYPES = ("word", "syllable")
+
+# Служебные мета-узлы: точка отсчёта времени и разбор последнего хода.
+# Это приборы, а не воспоминания, и в графе памяти им делать нечего —
+# висели безымянными серыми точками, а brain_epoch показывал числом
+# вместо текста.
+INSTRUMENT_TYPES = ("brain_epoch", "last_decision")
 
 TYPE_COLORS = {
     "episodic": "#5b8def",
@@ -87,6 +94,11 @@ class Snapshot:
     exposed_words: int
     has_stability: bool
     counts: Dict[str, int] = field(default_factory=dict)
+    # Разбор последнего хода: удивление, порог, решение, настроение.
+    # Пишется мозгом в мета-узел, потому что мини-апп читает базу
+    # отдельным процессом и до оперативного состояния не дотянется.
+    # None означает "мозг ещё ни разу не отвечал" — законное состояние.
+    decision: Optional[Dict] = None
 
 
 # --------------------------------------------------------------------------
@@ -142,11 +154,21 @@ def load_snapshot(db_path: str) -> Snapshot:
         key = n.node_type or "(без типа)"
         counts[key] = counts.get(key, 0) + 1
 
+    decision = None
+    for n in nodes:
+        if n.node_type == "last_decision" and n.is_meta:
+            try:
+                decision = json.loads(n.context)
+            except (ValueError, TypeError):
+                # Повреждённый разбор — не повод падать: покажем прочерк
+                decision = None
+            break
+
     conn.close()
     return Snapshot(
         db_path=str(path), nodes=nodes, edges=edges,
         mastered_words=mastered, exposed_words=exposed,
-        has_stability=has_stability, counts=counts,
+        has_stability=has_stability, counts=counts, decision=decision,
     )
 
 
@@ -318,9 +340,100 @@ def render_svg(nodes: List[Node], edges, positions, width=900, height=620) -> st
     return "".join(parts)
 
 
+MOOD_LABELS = {
+    "joy": "радость", "curiosity": "любопытство",
+    "anxiety": "тревога", "affection": "привязанность",
+}
+
+
+def render_decision(snap: Snapshot) -> str:
+    """
+    Разбор последнего хода — ПЕРВОЕ, что видит человек.
+
+    Дашборд начинается не со статистики, а с ответа на вопрос "что
+    сейчас произошло". Статистика говорит, сколько всего накоплено;
+    здесь видно, как принимается решение, и именно это отличает
+    дефицитную память от индекса.
+
+    Шкала рисуется с ЗАСЕЧКОЙ порога, а не просто заполненной полосой:
+    смысл не в величине плотности, а в том, по какую сторону порога она
+    оказалась.
+    """
+    d = snap.decision
+    if not d:
+        return (
+            '<div class="panel empty-panel">Мозг ещё ни разу не отвечал — '
+            'напиши ему, и здесь появится разбор хода.</div>'
+        )
+
+    density = float(d.get("density", 0.0))
+    threshold = float(d.get("threshold", 0.0))
+    surprise = float(d.get("surprise", 0.0))
+    emotion = float(d.get("emotion", 0.0))
+    written = bool(d.get("written"))
+    gap = density - threshold
+
+    verdict = (
+        f'<span class="verdict yes">записано</span>'
+        f'<span class="gapnote">плотность выше порога на {gap:.3f}</span>'
+        if written else
+        f'<span class="verdict no">не записано</span>'
+        f'<span class="gapnote">не хватило {abs(gap):.3f} до порога</span>'
+    )
+
+    return f"""<div class="panel">
+  <div class="said">{escape(str(d.get("text", ""))[:160])}</div>
+  <div class="gauge">
+    <i class="fill{' over' if written else ''}" style="width:{min(100, density * 100):.1f}%"></i>
+    <b class="mark" style="left:{min(100, threshold * 100):.1f}%"></b>
+  </div>
+  <div class="gaugelabels">
+    <span>плотность {density:.3f}</span><span>порог {threshold:.3f}</span>
+  </div>
+  <div class="verdictrow">{verdict}</div>
+  <div class="pair">
+    <div><span class="k">удивление</span><span class="v">{surprise:.3f}</span>
+      <span class="n">насколько разошлось с уже известным</span></div>
+    <div><span class="k">эмоция</span><span class="v">{emotion:.3f}</span>
+      <span class="n">насколько задело</span></div>
+  </div>
+</div>"""
+
+
+def render_mood(snap: Snapshot) -> str:
+    """Состояние организма: четыре оси настроения плюс возбуждение."""
+    mood = (snap.decision or {}).get("mood") or {}
+    if not mood:
+        return ""
+
+    rows = "".join(
+        f'<div class="moodrow"><span>{label}</span>'
+        f'<div class="bar"><i style="width:{max(0.0, min(1.0, float(mood.get(axis, 0.0)))) * 100:.0f}%"></i></div>'
+        f'<b>{float(mood.get(axis, 0.0)):.2f}</b></div>'
+        for axis, label in MOOD_LABELS.items()
+    )
+    arousal = float(mood.get("arousal", 0.0))
+    note = (
+        "перегружен — порог записи поднят, организм бережёт себя"
+        if arousal > config.STRESS_OVERLOAD_THRESHOLD else
+        "в рабочем режиме"
+    )
+    return f"""<div class="panel">
+  {rows}
+  <div class="moodrow arousal"><span>возбуждение</span>
+    <div class="bar"><i style="width:{max(0.0, min(1.0, arousal)) * 100:.0f}%"></i></div>
+    <b>{arousal:.2f}</b></div>
+  <p class="sub" style="margin:10px 0 0">{note}</p>
+</div>"""
+
+
 def render_html(snap: Snapshot, include_lexical: bool) -> str:
     visible_types = MEMORY_TYPES + (LEXICAL_TYPES if include_lexical else ())
-    visible = [n for n in snap.nodes if n.node_type in visible_types or n.is_meta]
+    visible = [
+        n for n in snap.nodes
+        if (n.node_type in visible_types or n.is_meta)
+        and n.node_type not in INSTRUMENT_TYPES
+    ]
     visible_ids = {n.id for n in visible}
     visible_edges = [(a, b, w) for a, b, w in snap.edges if a in visible_ids and b in visible_ids]
 
@@ -337,6 +450,10 @@ def render_html(snap: Snapshot, include_lexical: bool) -> str:
     )[:24]
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    decision_block = render_decision(snap)
+    mood_block = render_mood(snap) or (
+        '<div class="panel empty-panel">Настроение появится после первого ответа.</div>'
+    )
 
     progress_pct = 0 if not next_threshold else min(100, 100 * snap.mastered_words / next_threshold)
     progress_label = (
@@ -348,7 +465,7 @@ def render_html(snap: Snapshot, include_lexical: bool) -> str:
         f'<span class="chip"><i style="background:{TYPE_COLORS.get(t, TYPE_COLORS[None])}"></i>'
         f'{TYPE_LABELS.get(t, t)} · {snap.counts.get(t, 0)}</span>'
         for t in sorted(snap.counts, key=lambda t: -snap.counts[t])
-        if snap.counts.get(t)
+        if snap.counts.get(t) and t not in INSTRUMENT_TYPES
     )
 
     memory_rows = "".join(
@@ -427,6 +544,29 @@ tr:last-child td {{ border-bottom:none; }}
 .empty {{ color:var(--muted); font-style:italic; }}
 .warn {{ background:var(--warn-bg); color:var(--warn-fg); border-radius:8px; padding:10px 14px; font-size:13px; }}
 code {{ font-size:12px; }}
+.panel {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }}
+.empty-panel {{ color:var(--muted); font-style:italic; }}
+.said {{ font-size:16px; font-weight:560; margin-bottom:14px; }}
+.gauge {{ position:relative; height:14px; background:var(--line); border-radius:99px; overflow:hidden; }}
+.gauge .fill {{ display:block; height:100%; background:var(--muted); border-radius:99px; }}
+.gauge .fill.over {{ background:var(--accent); }}
+.gauge .mark {{ position:absolute; top:-3px; width:2px; height:20px; background:var(--fg); }}
+.gaugelabels {{ display:flex; justify-content:space-between; color:var(--muted);
+                font-size:12px; margin-top:6px; font-variant-numeric:tabular-nums; }}
+.verdictrow {{ margin-top:12px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }}
+.verdict {{ font-weight:640; font-size:14px; }}
+.verdict.yes {{ color:var(--accent); }}
+.verdict.no {{ color:var(--muted); }}
+.gapnote {{ color:var(--muted); font-size:12px; }}
+.pair {{ display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); margin-top:14px; }}
+.pair .k {{ color:var(--muted); font-size:12px; display:block; }}
+.pair .v {{ font-size:19px; font-weight:620; font-variant-numeric:tabular-nums; }}
+.pair .n {{ color:var(--muted); font-size:12px; display:block; margin-top:2px; }}
+.moodrow {{ display:grid; grid-template-columns:110px 1fr 44px; gap:10px; align-items:center;
+            margin-bottom:8px; font-size:13px; }}
+.moodrow b {{ text-align:right; font-variant-numeric:tabular-nums; font-weight:560; color:var(--muted); }}
+.moodrow .bar {{ margin-top:0; }}
+.moodrow.arousal {{ margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }}
 </style>
 
 <div class="wrap">
@@ -435,6 +575,13 @@ code {{ font-size:12px; }}
 
   {stability_note}
 
+  <h2 style="margin-top:0">Что случилось с последним сообщением</h2>
+  {decision_block}
+
+  <h2>Состояние организма</h2>
+  {mood_block}
+
+  <h2>Что накопилось</h2>
   <div class="cards">
     <div class="card"><div class="k">Стадия речи</div><div class="v">{stage}</div>
       <div class="n">{escape(stage_name)}</div></div>
