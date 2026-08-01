@@ -1051,6 +1051,13 @@ BABBLING_SYLLABLE_POOL_SIZE = _get_int("BABBLING_SYLLABLE_POOL_SIZE", 30)
 # Пропорция 0.6/0.4 повторяет уже принятую в проекте развесовку
 # MEMORY_KEYWORD_WEIGHT/MEMORY_FUZZY_WEIGHT: знание самих единиц весит
 # больше, чем знание их сочетаний.
+# При скольких содержательных словах реплика способна удивить в полную
+# силу. Короче — удивление режется пропорционально: одно незнакомое слово
+# несёт меньше информации, чем шесть. Без этой поправки "ага" и "моя дочь
+# Лиза ей шесть лет" на пустой памяти давали одинаковые 1.000, и память
+# засорялась междометиями с первого дня.
+SURPRISE_FULL_CONTENT_TOKENS = _get_int("SURPRISE_FULL_CONTENT_TOKENS", 2)
+
 SURPRISE_LEXICAL_WEIGHT = _get_float("SURPRISE_LEXICAL_WEIGHT", 0.6)
 SURPRISE_STRUCTURAL_WEIGHT = _get_float("SURPRISE_STRUCTURAL_WEIGHT", 0.4)
 
