@@ -20,7 +20,7 @@ import random
 import pytest
 
 from core.instincts import InstinctSystem
-from decaymem.graph_memory import KnownSyllable
+from selectivemem.graph_memory import KnownSyllable
 
 
 @pytest.fixture

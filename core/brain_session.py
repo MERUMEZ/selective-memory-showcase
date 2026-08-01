@@ -28,12 +28,12 @@ from core.drives import BoredomDrive
 from core.instincts import InstinctSystem
 from core.perception import Perception
 from core.persona_memory import PersonaMemory
-from decaymem.graph_memory import MemoryGraph
-from decaymem.database import Database
-from decaymem.settings import MemorySettings
-from decaymem import embeddings
+from selectivemem.graph_memory import MemoryGraph
+from selectivemem.database import Database
+from selectivemem.settings import MemorySettings
+from selectivemem import embeddings
 from core.sleep_cycle import SleepCycle
-from decaymem.working_memory import WorkingMemory
+from selectivemem.working_memory import WorkingMemory
 from storage.utils.logger import get_logger
 
 logger = get_logger(__name__)

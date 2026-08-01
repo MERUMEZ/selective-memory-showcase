@@ -16,8 +16,8 @@ import pytest
 
 import config
 from core.instincts import InstinctSystem
-from decaymem.database import Database
-from decaymem.graph_memory import KnownSyllable, MemoryGraph
+from selectivemem.database import Database
+from selectivemem.graph_memory import KnownSyllable, MemoryGraph
 
 
 @pytest.fixture

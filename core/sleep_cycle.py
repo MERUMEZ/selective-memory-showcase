@@ -40,12 +40,12 @@ from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
 import config
-from decaymem.graph_memory import MemoryGraph, HubCluster
+from selectivemem.graph_memory import MemoryGraph, HubCluster
 from services.llm import generate_llm_response
 from storage.utils.logger import get_logger
 
 if TYPE_CHECKING:
-    from decaymem.working_memory import WorkingMemory
+    from selectivemem.working_memory import WorkingMemory
     from core.instincts import InstinctSystem
     from core.mood import Mood
 

@@ -38,7 +38,7 @@ import config
 from storage.utils.logger import get_logger
 
 if TYPE_CHECKING:
-    from decaymem.graph_memory import KnownSyllable, KnownWord
+    from selectivemem.graph_memory import KnownSyllable, KnownWord
 
 logger = get_logger(__name__)
 
