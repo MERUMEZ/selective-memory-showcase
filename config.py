@@ -364,12 +364,31 @@ OPENROUTER_API_KEY = _get_str("OPENROUTER_API_KEY", "")
 # Базовый URL API OpenRouter (OpenAI-совместимый эндпоинт)
 OPENROUTER_BASE_URL = _get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-# Модель по умолчанию: anthropic/claude-3.5-haiku — быстрая, экономная,
-# хорошо следует структурированным промптам (важно для нашего
-# [MEMORY CONTEXT]-подхода). Можно переопределить в .env, например:
-#   OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct
-#   OPENROUTER_MODEL=google/gemini-2.5-flash
-OPENROUTER_MODEL = _get_str("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
+# Модель речевого органа.
+#
+# Прежнее умолчание (anthropic/claude-3.5-haiku) БОЛЬШЕ НЕ СУЩЕСТВУЕТ на
+# OpenRouter — запрос возвращает 404 "No endpoints found". То есть у всех,
+# кто не переопределил модель в .env, бот молча оставался без речи.
+#
+# ГЛАВНОЕ ТРЕБОВАНИЕ К МОДЕЛИ здесь необычное: она должна УМЕТЬ НЕ ЗНАТЬ.
+# Промпт запрещает опираться на энциклопедические знания и велит
+# признаваться в незнании, если в [MEMORY CONTEXT] пусто (см.
+# TABULA_RASA_PROMPT_TEMPLATE). Слабые модели этот запрет игнорируют —
+# и вся идея организма, который учится с нуля, рассыпается: он отвечает
+# как поисковик, а не как тот, кто пока ничего не знает.
+#
+# Замер на пустой памяти, четыре вопроса ("почему небо голубое", "кто
+# написал Войну и мир", "как меня зовут", "17 умножить на 24"):
+#
+#   qwen/qwen-2.5-7b-instruct        выдал физику рассеяния, Толстого и 408
+#   mistral-small-3.2-24b-instruct   признал незнание везде, кроме счёта
+#   google/gemini-2.5-flash          признал незнание везде
+#   anthropic/claude-haiku-4.5       признал незнание, счёт начал вслух
+#
+# Умолчанием выбран mistral-small: он ведёт себя правильно и при этом
+# стоит как самый дешёвый вариант (~$0.06 за 1000 сообщений против $0.07
+# у qwen). Gemini держится лучше всех, но дороже впятеро ($0.33).
+OPENROUTER_MODEL = _get_str("OPENROUTER_MODEL", "mistralai/mistral-small-3.2-24b-instruct")
 
 # Температура генерации (0.0 = детерминированно, 1.0+ = более творчески)
 LLM_TEMPERATURE = _get_float("LLM_TEMPERATURE", 0.7)
