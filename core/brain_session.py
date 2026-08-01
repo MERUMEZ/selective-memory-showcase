@@ -19,7 +19,7 @@ process_message(text) -> BrainResponse, без единого input()/print().
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional, List, Any
+from typing import Any, Callable, List, Optional
 
 import config
 from core.amygdala import Amygdala
@@ -105,6 +105,51 @@ class SharedActivationState:
             self._stm_window_node_ids.clear()
 
 
+class ManualWallClock:
+    """
+    Настенные часы, которые не идут сами: их двигает тот, кто меряет.
+
+    Нужны стендам. Пока источником времени был time.time(), длительность
+    прогона подмешивалась в возраст узлов (умноженная на
+    TIME_ACCELERATION), и два запуска ОДНОГО И ТОГО ЖЕ кода на одних и тех
+    же данных расходились: у наивных хранилищ гуляло число узлов, у
+    организма — доля вспомненного на несколько процентных пунктов.
+
+    Стенд теперь задаёт паузы между репликами ЯВНО, и это честнее: раньше
+    интервал между сообщениями определялся тем, насколько быстр процессор,
+    а не тем, как разговаривает человек.
+    """
+
+    def __init__(self, start: float, seconds_per_call: float = 0.0):
+        self._now = float(start)
+        self._step = float(seconds_per_call)
+
+    def __call__(self) -> float:
+        now = self._now
+        self._now += self._step
+        return now
+
+    def advance(self, seconds: float) -> None:
+        """
+        Промотать настенное время вперёд — так стенд моделирует паузу.
+
+        Именно ВПЕРЁД и именно настенное. У SharedBrainClock есть
+        simulate_elapsed_wall_seconds, который добивается того же сдвигом
+        эпохи НАЗАД, но он рассчитан на неподвижные настоящие часы. С
+        подменёнными часами он даёт обратный эффект: brain_time считается
+        как epoch + max(0, wall - epoch) * A, и пока wall не ушёл вперёд
+        эпохи, второе слагаемое зажато в ноль — значит сдвиг эпохи назад
+        двигает субъективное время ВСПЯТЬ. Дальше в _decay_nodes стоит
+        `if dt <= 0: continue`, и забывание молча выключается. Ровно тот
+        дефект, который однажды уже чинили.
+        """
+        self._now += float(seconds)
+
+    def reset_to(self, wall_time: float) -> None:
+        """Поставить часы в заданную точку (обычно — в эпоху мозга)."""
+        self._now = float(wall_time)
+
+
 class SharedBrainClock:
     """
     Субъективное время организма — ОДНА когерентная шкала.
@@ -141,7 +186,7 @@ class SharedBrainClock:
     организма (см. seconds_since_last_activity).
     """
 
-    def __init__(self, epoch: float):
+    def __init__(self, epoch: float, wall_clock: Optional[Callable[[], float]] = None):
         """
         epoch — ОДНА настенная метка: момент, когда у этого мозга начался
         отсчёт субъективного времени. Хранится в БД и переживает
@@ -151,11 +196,28 @@ class SharedBrainClock:
         при паре момент старта процесса становится второй точкой отсчёта,
         и часы снова сбрасываются при каждой перезагрузке — ровно тот
         дефект, который мы и чиним.
+
+        wall_clock — источник настенного времени, по умолчанию time.time.
+        Подменяется ИЗМЕРИТЕЛЬНЫМИ СТЕНДАМИ, и не ради удобства: реальная
+        длительность прогона входила в субъективное время с множителем
+        TIME_ACCELERATION, поэтому один и тот же код на одних и тех же
+        данных давал разные числа от запуска к запуску. Узлы, стоящие у
+        порога извлечения, перескакивали его случайно.
         """
         self._lock = threading.Lock()
+        self._wall = wall_clock or time.time
         self._epoch = epoch
         self.last_user_brain_time = self._brain_time_unlocked()
-        self.last_activity_wall = time.time()
+        self.last_activity_wall = self._wall()
+
+    @property
+    def epoch(self) -> float:
+        """
+        Настенная точка отсчёта. Нужна стендам: их часы обязаны стартовать
+        РОВНО с эпохи, иначе разница между стартом процесса и созданием
+        эпохи возвращается в замер случайной величиной.
+        """
+        return self._epoch
 
     def get_brain_time(self) -> float:
         """Субъективное время организма — чистая функция настенного."""
@@ -163,7 +225,7 @@ class SharedBrainClock:
             return self._brain_time_unlocked()
 
     def _brain_time_unlocked(self) -> float:
-        elapsed = max(0.0, time.time() - self._epoch)
+        elapsed = max(0.0, self._wall() - self._epoch)
         return self._epoch + elapsed * config.TIME_ACCELERATION
 
     def register_user_message(self) -> float:
@@ -171,12 +233,12 @@ class SharedBrainClock:
         with self._lock:
             brain_time = self._brain_time_unlocked()
             self.last_user_brain_time = brain_time
-            self.last_activity_wall = time.time()
+            self.last_activity_wall = self._wall()
             return brain_time
 
     def register_activity(self) -> None:
         with self._lock:
-            self.last_activity_wall = time.time()
+            self.last_activity_wall = self._wall()
 
     def simulate_elapsed_wall_seconds(self, wall_seconds: float) -> float:
         """
@@ -212,7 +274,7 @@ class SharedBrainClock:
         вопросы про внешний мир, а не про субъективное время.
         """
         with self._lock:
-            return time.time() - self.last_activity_wall
+            return self._wall() - self.last_activity_wall
 
 
 class BrainSession:
@@ -228,7 +290,11 @@ class BrainSession:
     выход — BrainResponse. Никакого input()/print() внутри.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        wall_clock: Optional[Callable[[], float]] = None,
+    ):
         self.db_path = db_path or config.BRAIN_DB_PATH
 
         # Единственное место, где глобальный config встречается с ядром
@@ -262,8 +328,10 @@ class BrainSession:
 
         # Эпоха переживает перезагрузку: иначе часы прыгали бы назад
         # относительно меток в БД и забывание молча выключалось
-        epoch = self.memory.get_or_create_brain_epoch()
-        self.clock = SharedBrainClock(epoch=epoch)
+        epoch = self.memory.get_or_create_brain_epoch(
+            now=(wall_clock or time.time)()
+        )
+        self.clock = SharedBrainClock(epoch=epoch, wall_clock=wall_clock)
         self.activation_state = SharedActivationState()
 
         self.idle_ticks_without_event: int = 0

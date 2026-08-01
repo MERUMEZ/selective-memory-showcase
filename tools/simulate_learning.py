@@ -28,6 +28,7 @@ import argparse
 import os
 import random
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -240,9 +241,26 @@ def run_simulation(
     random.seed(seed)
     rng = random.Random(seed)
 
-    from core.brain_session import BrainSession
+    from core.brain_session import BrainSession, ManualWallClock
 
-    session = BrainSession(db_path=":memory:")
+    # Часы стенда НЕ идут сами. Раньше источником настенного времени был
+    # time.time(), а он входит в субъективное с множителем
+    # TIME_ACCELERATION, поэтому в возраст узлов подмешивалась реальная
+    # длительность прогона — и два запуска одного и того же кода
+    # расходились. Паузы между сессиями стенд задаёт явно, ниже.
+    #
+    # Шаг НУЛЕВОЙ намеренно: так замер сохраняет прежний смысл, а правка
+    # убирает только случайность. Разговор с паузами в полминуты между
+    # репликами — отдельный, более реалистичный режим, и включать его
+    # надо осознанно, перемеряв все числа заново.
+    #
+    # Точка отсчёта ФИКСИРОВАННАЯ, а не "сейчас": из неё же берётся эпоха
+    # мозга, а эпоха входит в каждую метку времени в базе. Пока она была
+    # настоящим временем запуска, два прогона расходились уже на первом
+    # сообщении — при побитово одинаковом графе и одинаковом состоянии
+    # генератора случайных чисел. Паузы задаются wall.advance() ниже.
+    wall = ManualWallClock(start=1_700_000_000.0, seconds_per_call=0.0)
+    session = BrainSession(db_path=":memory:", wall_clock=wall)
     stream = build_message_stream(n_messages, words_per_message, rng, tail_ratio)
 
     print("=" * 74)
@@ -296,7 +314,7 @@ def run_simulation(
             before = session.memory.get_vocabulary_size()
             # Часы — чистая функция настенного времени, поэтому пауза
             # моделируется промоткой, а не ручным сложением
-            session.clock.simulate_elapsed_wall_seconds(gap_hours * 3600.0)
+            wall.advance(gap_hours * 3600.0)
             session.memory.apply_decay(now=session.clock.get_brain_time())
             after = session.memory.get_vocabulary_size()
             print(
