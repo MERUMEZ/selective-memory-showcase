@@ -1056,6 +1056,11 @@ BABBLING_SYLLABLE_POOL_SIZE = _get_int("BABBLING_SYLLABLE_POOL_SIZE", 30)
 # несёт меньше информации, чем шесть. Без этой поправки "ага" и "моя дочь
 # Лиза ей шесть лет" на пустой памяти давали одинаковые 1.000, и память
 # засорялась междометиями с первого дня.
+# Пол угасания: до какого веса опускается узел с полностью заслуженным
+# одобрением. Подкреплённое тускнеет, но не исчезает — иначе отмеченное
+# важным, но ни разу не пригодившееся, уходило в ноль вместе с рутиной.
+MEMORY_FLOOR_MAX = _get_float("MEMORY_FLOOR_MAX", 0.25)
+
 SURPRISE_FULL_CONTENT_TOKENS = _get_int("SURPRISE_FULL_CONTENT_TOKENS", 2)
 
 SURPRISE_LEXICAL_WEIGHT = _get_float("SURPRISE_LEXICAL_WEIGHT", 0.6)
