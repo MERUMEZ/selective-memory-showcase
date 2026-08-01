@@ -19,8 +19,8 @@ import pytest
 import config
 from core.cortex import Cortex
 from core.instincts import InstinctSystem
-from memory.database import Database
-from memory.graph_memory import MemoryGraph
+from engram.database import Database
+from engram.graph_memory import MemoryGraph
 
 
 @pytest.fixture

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import config
-from memory.graph_memory import MemoryGraph
+from engram.graph_memory import MemoryGraph
 from services.llm import generate_llm_response
 from storage.utils.logger import get_logger
 

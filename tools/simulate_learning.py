@@ -61,7 +61,7 @@ import config  # noqa: E402
 # пор ходил в сеть по-настоящему, теряя воспроизводимость. Проверка
 # hasattr ниже ловит только обратную ошибку (лишний модуль), поэтому
 # новый вызывающий LLM надо добавлять сюда руками.
-LLM_MODULES = ("core.cortex", "core.persona_memory", "memory.sleep_cycle")
+LLM_MODULES = ("core.cortex", "core.persona_memory", "core.sleep_cycle")
 
 _llm_calls = {"count": 0}
 

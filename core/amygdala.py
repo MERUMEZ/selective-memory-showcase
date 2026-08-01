@@ -130,9 +130,17 @@ class Amygdala:
         # signal.valence > 0 -> позитивное подкрепление предыдущего ответа
     """
 
-    def __init__(self, base_threshold: float = None):
-        self.base_threshold = (
-            base_threshold if base_threshold is not None else config.BASE_PLASTICITY_THRESHOLD
+    def __init__(self, base_threshold: float = None, settings=None):
+        # Порог записи — ЯДРО, вынесенное в memory/plasticity.py. Здесь
+        # остаётся то, что принадлежит продукту: распознавание русских
+        # маркеров одобрения и доверие к ним. Пакету памяти незачем знать
+        # слово "молодец".
+        from engram.plasticity import PlasticityGate
+        from engram.settings import MemorySettings
+
+        self.gate = PlasticityGate(
+            settings=settings or MemorySettings.from_module(config),
+            base_threshold=base_threshold,
         )
 
         # Retrospective Correction: "доверие" к каждому отдельному маркеру
@@ -155,34 +163,24 @@ class Amygdala:
         порогом пластичности и возвращает AmygdalaResult с флагом
         is_spike_triggered.
         """
-        total_density = (emotion_score * 0.5) + (perplexity * 0.5)
-        effective_threshold = self._compute_effective_threshold(stress_level)
-        is_spike_triggered = total_density >= effective_threshold
-
-        if is_spike_triggered:
-            logger.info(
-                "[SPIKE DETECTED] total_density=%.3f (emotion=%.3f, perplexity=%.3f) >= threshold=%.3f",
-                total_density, emotion_score, perplexity, effective_threshold,
-            )
-        else:
-            logger.info(
-                "[ROUTINE] total_density=%.3f (emotion=%.3f, perplexity=%.3f) < threshold=%.3f",
-                total_density, emotion_score, perplexity, effective_threshold,
-            )
-
+        decision = self.gate.evaluate(
+            emotion=emotion_score, surprise=perplexity, load=stress_level
+        )
         return AmygdalaResult(
-            emotion_score=emotion_score,
-            perplexity=perplexity,
-            total_density=total_density,
-            threshold_used=effective_threshold,
-            is_spike_triggered=is_spike_triggered,
+            emotion_score=decision.emotion,
+            perplexity=decision.surprise,
+            total_density=decision.density,
+            threshold_used=decision.threshold,
+            is_spike_triggered=decision.is_spike,
         )
 
+    @property
+    def base_threshold(self) -> float:
+        """Совместимость: снаружи порог читают у амигдалы."""
+        return self.gate.base_threshold
+
     def _compute_effective_threshold(self, stress_level: float) -> float:
-        stress_level = max(0.0, min(1.0, stress_level))
-        modifier = stress_level * config.PLASTICITY_STRESS_MODIFIER
-        effective_threshold = min(1.0, self.base_threshold + modifier)
-        return effective_threshold
+        return self.gate.effective_threshold(stress_level)
 
     # ----------------------------------------------------------------------
     # Feedback Valence Detection (Подсознательное Подкрепление)

@@ -20,7 +20,7 @@ from dataclasses import fields
 import pytest
 
 import config
-from memory.settings import MemorySettings
+from engram.settings import MemorySettings
 
 
 def _config_name(field_name: str) -> str:
@@ -81,8 +81,8 @@ def test_settings_are_independent_of_config():
 
 def test_graph_uses_injected_settings():
     """Граф действительно живёт по переданным настройкам, а не по config."""
-    from memory.database import Database
-    from memory.graph_memory import MemoryGraph
+    from engram.database import Database
+    from engram.graph_memory import MemoryGraph
 
     graph = MemoryGraph(
         db=Database(db_path=":memory:"),
@@ -92,23 +92,35 @@ def test_graph_uses_injected_settings():
     assert graph.settings.decay_rate != config.DECAY_RATE
 
 
-def test_memory_package_does_not_import_config():
+def test_memory_package_is_self_contained():
     """
-    Главная проверка развязки: ни один модуль ядра не тянет глобальный
-    config. Читается ИСХОДНИК, а не импорты — импорт мог бы прийти
-    транзитивно и создать ложное спокойствие.
+    Главная проверка развязки: ни один модуль ядра не тянет ничего из
+    приложения — ни config, ни core, ни services, ни storage. Читается
+    ИСХОДНИК, а не импорты: импорт мог бы прийти транзитивно и создать
+    ложное спокойствие.
 
-    sleep_cycle исключён осознанно: он оперирует настроением и промптом
-    консолидации, то есть принадлежит персонажу и в пакет памяти не едет.
+    Шаблон намеренно НЕ требует точки после имени пакета. Прошлая версия
+    требовала (`from services\\.`), поэтому пропускала форму
+    `from services import embeddings` — и ядро зависело от services, пока
+    проверка показывала "чисто". Ошибка была не в коде, а в самой
+    проверке, что хуже: она создавала уверенность.
+
+    По той же причине здесь проверяется, что каталог вообще нашёлся и в
+    нём есть файлы: после переименования memory/ -> engram/ проверка
+    молча стала смотреть в пустоту и, разумеется, проходила.
     """
     import pathlib
     import re
 
-    root = pathlib.Path(__file__).resolve().parent.parent / "memory"
-    pattern = re.compile(r"^\s*(import config|from config import)", re.M)
+    root = pathlib.Path(__file__).resolve().parent.parent / "engram"
+    modules = sorted(root.glob("*.py"))
+    assert len(modules) >= 5, f"каталог ядра не найден или пуст: {root}"
 
-    offenders = [
-        p.name for p in sorted(root.glob("*.py"))
-        if p.name != "sleep_cycle.py" and pattern.search(p.read_text())
-    ]
-    assert not offenders, f"ядро всё ещё зависит от config: {offenders}"
+    pattern = re.compile(r"^\s*(from|import)\s+(config|core|services|storage)\b", re.M)
+
+    offenders = {}
+    for path in modules:
+        found = pattern.findall(path.read_text())
+        if found:
+            offenders[path.name] = sorted({m[1] for m in found})
+    assert not offenders, f"ядро зависит от приложения: {offenders}"

@@ -28,12 +28,12 @@ from core.drives import BoredomDrive
 from core.instincts import InstinctSystem
 from core.perception import Perception
 from core.persona_memory import PersonaMemory
-from memory.graph_memory import MemoryGraph
-from memory.database import Database
-from memory.settings import MemorySettings
-from services import embeddings
-from memory.sleep_cycle import SleepCycle
-from memory.working_memory import WorkingMemory
+from engram.graph_memory import MemoryGraph
+from engram.database import Database
+from engram.settings import MemorySettings
+from engram import embeddings
+from core.sleep_cycle import SleepCycle
+from engram.working_memory import WorkingMemory
 from storage.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -16,8 +16,8 @@ import pytest
 
 import config
 from core.instincts import InstinctSystem
-from memory.database import Database
-from memory.graph_memory import KnownSyllable, MemoryGraph
+from engram.database import Database
+from engram.graph_memory import KnownSyllable, MemoryGraph
 
 
 @pytest.fixture
