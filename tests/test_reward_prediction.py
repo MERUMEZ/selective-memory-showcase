@@ -15,8 +15,8 @@ import pytest
 
 import config
 from core.instincts import InstinctSystem
-from engram.database import Database
-from engram.graph_memory import MemoryGraph
+from decaymem.database import Database
+from decaymem.graph_memory import MemoryGraph
 
 
 @pytest.fixture

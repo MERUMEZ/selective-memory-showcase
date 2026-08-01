@@ -34,14 +34,14 @@ from typing import List, Optional
 from core.amygdala import Amygdala
 from core.instincts import InstinctSystem
 from core.mood import Appraisal, Mood, MoodState
-from engram.graph_memory import MemoryGraph, MemoryMatch
-from engram.reinforcement import (
+from decaymem.graph_memory import MemoryGraph, MemoryMatch
+from decaymem.reinforcement import (
     ActionTrace,
     FeedbackHistoryEntry,
     ReinforcementLoop,
     RetrospectiveCorrectionResult,
 )
-from engram.working_memory import WorkingMemory
+from decaymem.working_memory import WorkingMemory
 from services.llm import generate_llm_response
 from storage.utils.logger import get_logger
 

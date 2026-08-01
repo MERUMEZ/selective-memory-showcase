@@ -20,7 +20,7 @@ from dataclasses import fields
 import pytest
 
 import config
-from engram.settings import MemorySettings
+from decaymem.settings import MemorySettings
 
 
 def _config_name(field_name: str) -> str:
@@ -81,8 +81,8 @@ def test_settings_are_independent_of_config():
 
 def test_graph_uses_injected_settings():
     """Граф действительно живёт по переданным настройкам, а не по config."""
-    from engram.database import Database
-    from engram.graph_memory import MemoryGraph
+    from decaymem.database import Database
+    from decaymem.graph_memory import MemoryGraph
 
     graph = MemoryGraph(
         db=Database(db_path=":memory:"),
@@ -105,14 +105,18 @@ def test_memory_package_is_self_contained():
     проверка показывала "чисто". Ошибка была не в коде, а в самой
     проверке, что хуже: она создавала уверенность.
 
-    По той же причине здесь проверяется, что каталог вообще нашёлся и в
-    нём есть файлы: после переименования memory/ -> engram/ проверка
-    молча стала смотреть в пустоту и, разумеется, проходила.
+    Каталог берётся ИЗ САМОГО ПАКЕТА (decaymem.__path__), а не строкой.
+    Строку я уже дважды забывал поправить при переименовании — memory/ ->
+    engram/ -> decaymem/, — и оба раза проверка молча смотрела в пустоту и
+    проходила. Тест, который нельзя сломать переименованием, надёжнее
+    теста, который надо не забыть поправить.
     """
     import pathlib
     import re
 
-    root = pathlib.Path(__file__).resolve().parent.parent / "engram"
+    import decaymem
+
+    root = pathlib.Path(decaymem.__path__[0])
     modules = sorted(root.glob("*.py"))
     assert len(modules) >= 5, f"каталог ядра не найден или пуст: {root}"
 

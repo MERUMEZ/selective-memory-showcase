@@ -135,8 +135,8 @@ class Amygdala:
         # остаётся то, что принадлежит продукту: распознавание русских
         # маркеров одобрения и доверие к ним. Пакету памяти незачем знать
         # слово "молодец".
-        from engram.plasticity import PlasticityGate
-        from engram.settings import MemorySettings
+        from decaymem.plasticity import PlasticityGate
+        from decaymem.settings import MemorySettings
 
         self.gate = PlasticityGate(
             settings=settings or MemorySettings.from_module(config),
