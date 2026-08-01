@@ -35,6 +35,12 @@ from core.amygdala import Amygdala
 from core.instincts import InstinctSystem
 from core.mood import Appraisal, Mood, MoodState
 from memory.graph_memory import MemoryGraph, MemoryMatch, ProactiveCandidate
+from memory.reinforcement import (
+    ActionTrace,
+    FeedbackHistoryEntry,
+    ReinforcementLoop,
+    RetrospectiveCorrectionResult,
+)
 from memory.working_memory import WorkingMemory
 from services.llm import generate_llm_response
 from storage.utils.logger import get_logger
@@ -82,24 +88,6 @@ class ProactiveMessage:
 
 
 @dataclass
-class ActionTrace:
-    """
-    Последний след транзакции (Last Transaction Trace) — фиксирует
-    связку Input -> Action для последующей оценки Feedback на СЛЕДУЮЩЕМ шаге.
-
-    node_id   — единичный узел (используется memory_retrieval).
-    node_ids  — список узлов (используется babbling — несколько
-                syllable-узлов, задействованных в одной лепетной фразе).
-                None для action_type, не оперирующих множеством узлов.
-    """
-    user_input: str
-    bot_output: str
-    node_id: Optional[int]
-    action_type: str  # "echolalia" | "llm_generation" | "memory_retrieval" | "babbling" | "blended_mimicry"
-    node_ids: Optional[List[int]] = None
-
-
-@dataclass
 class FeedbackResult:
     """Результат применения обратной связи к last_action_trace."""
     valence: float
@@ -111,39 +99,6 @@ class FeedbackResult:
     mood_state: Optional[MoodState] = None
     retrospective_correction: Optional["RetrospectiveCorrectionResult"] = None
     node_ids: Optional[List[int]] = None
-
-
-@dataclass
-class FeedbackHistoryEntry:
-    """
-    Один применённый Feedback-эффект в истории Retrospective Correction.
-
-    node_ids — для babbling-действий: список syllable-узлов, к которым
-    был применён applied_delta (единый для всех, см. apply_feedback).
-    Retrospective Correction (см. _check_retrospective_correction) пока
-    обрабатывает только записи с одиночным node_id (memory_retrieval) —
-    это осознанное упрощение первой версии, babbling-записи в отложенном
-    опровержении участвовать не будут.
-    """
-    timestamp: Optional[float]
-    valence: float
-    matched_markers: List[str]
-    node_id: Optional[int]
-    user_input: str
-    bot_output: str
-    action_type: str
-    applied_delta: float = 0.0
-    reversed: bool = False
-    node_ids: Optional[List[int]] = None
-
-
-@dataclass
-class RetrospectiveCorrectionResult:
-    """Результат проверки на отложенное опровержение прошлого фидбэка."""
-    triggered: bool
-    reversed_entry: Optional[FeedbackHistoryEntry] = None
-    reversal_delta: float = 0.0
-    penalized_markers: List[str] = field(default_factory=list)
 
 
 class Cortex:
@@ -173,15 +128,27 @@ class Cortex:
         # recover_markers реально влияли на marker_trust, используемый
         # при следующих вызовах detect_feedback_signal.
         self.amygdala = amygdala or Amygdala()
-        self.last_action_trace: Optional[ActionTrace] = None
 
-        # Короткая история последних N связок Input->Action->Feedback —
-        # окно, в пределах которого более позднее противоречащее сообщение
-        # трактуется как отложенное опровержение прошлой оценки
-        # (Retrospective Correction), а не независимый новый фидбэк.
-        self.feedback_history: "deque[FeedbackHistoryEntry]" = deque(
-            maxlen=config.RETROSPECTIVE_WINDOW_SIZE
-        )
+        # Контур подкрепления — ЯДРО, вынесенное в memory/reinforcement.py.
+        # Он работает с узлами и ничего не знает ни про настроение, ни про
+        # эхолалию, ни про речевые стадии. Cortex получает от него итог и
+        # сам решает, что это значит для ПЕРСОНАЖА. Это тот шов, по которому
+        # память отделяется от тамагочи.
+        self.reinforcement = ReinforcementLoop(memory=self.memory, amygdala=self.amygdala)
+
+    # Совместимость: снаружи (bot, тесты, стенды) продолжают обращаться к
+    # следу действия и истории оценок через Cortex.
+    @property
+    def last_action_trace(self):
+        return self.reinforcement.last_action_trace
+
+    @last_action_trace.setter
+    def last_action_trace(self, value):
+        self.reinforcement.last_action_trace = value
+
+    @property
+    def feedback_history(self):
+        return self.reinforcement.feedback_history
 
     # ----------------------------------------------------------------------
     # a) Perplexity
@@ -476,6 +443,14 @@ class Cortex:
         ]
         return "; ".join(parts)
 
+
+
+    # ----------------------------------------------------------------------
+    # c) ПОДСОЗНАТЕЛЬНОЕ ПОДКРЕПЛЕНИЕ (Reinforcement / Feedback Loop)
+    # ----------------------------------------------------------------------
+
+
+
     def _record_action_trace(
         self,
         user_input: str,
@@ -484,91 +459,11 @@ class Cortex:
         action_type: str,
         node_ids: Optional[List[int]] = None,
     ) -> None:
-        """Фиксирует связку Input -> Action в last_action_trace (Триада)."""
-        self.last_action_trace = ActionTrace(
-            user_input=user_input,
-            bot_output=bot_output,
-            node_id=node_id,
-            action_type=action_type,
-            node_ids=node_ids,
+        """Фиксирует связку Вход -> Действие для оценки на следующем шаге."""
+        self.reinforcement.record_action(
+            user_input=user_input, bot_output=bot_output,
+            node_id=node_id, action_type=action_type, node_ids=node_ids,
         )
-        logger.debug(
-            "[ACTION TRACE] input=%r output=%r node_id=%s node_ids=%s action_type=%s",
-            user_input[:40], bot_output[:40], node_id, node_ids, action_type,
-        )
-
-    def _check_retrospective_correction(
-        self,
-        valence: float,
-        matched_markers: List[str],
-        timestamp: Optional[float],
-    ) -> RetrospectiveCorrectionResult:
-        """
-        Сканирует self.feedback_history (от новейших к старейшим) в поисках
-        ЕЩЁ НЕ ОТКАТАННОЙ записи с валентностью ПРОТИВОПОЛОЖНОГО знака,
-        попадающей в RETROSPECTIVE_TIME_WINDOW_SECONDS. Если находит —
-        трактует текущий фидбэк как отложенное опровержение (сарказм/
-        самокоррекция пользователя): откатывает прежний эффект на узле,
-        штрафует маркеры, которые к нему привели (Amygdala.penalize_markers),
-        и возвращает результат для наложения усиленной корректирующей дельты.
-        """
-        if not config.RETROSPECTIVE_CORRECTION_ENABLED:
-            return RetrospectiveCorrectionResult(triggered=False)
-
-        if timestamp is None or valence == 0.0:
-            return RetrospectiveCorrectionResult(triggered=False)
-
-        for entry in reversed(self.feedback_history):
-            if entry.reversed or entry.node_id is None or entry.valence == 0.0:
-                continue
-
-            # Ищем противоречие по знаку: старая запись позитивная, новая
-            # негативная (или наоборот) -> отложенное опровержение.
-            same_sign = (entry.valence > 0) == (valence > 0)
-            if same_sign or entry.timestamp is None:
-                continue
-
-            elapsed = timestamp - entry.timestamp
-            if elapsed < 0 or elapsed > config.RETROSPECTIVE_TIME_WINDOW_SECONDS:
-                continue
-
-            # Найдена противоречащая запись -> откатываем её прежний эффект
-            # усиленной коррекцией и штрафуем маркеры, которые к ней привели.
-            reversal_delta = -entry.applied_delta * config.RETROSPECTIVE_REVERSAL_STRENGTH
-
-            if reversal_delta > 0:
-                self.memory.reinforce_node(entry.node_id, boost=reversal_delta, timestamp=timestamp)
-            elif reversal_delta < 0:
-                self.memory.penalize_node(entry.node_id, penalty=abs(reversal_delta), timestamp=timestamp)
-
-            entry.reversed = True
-
-            if entry.matched_markers:
-                self.amygdala.penalize_markers(entry.matched_markers)
-
-            logger.info(
-                "[RETROSPECTIVE CORRECTION] Опровержение прошлого фидбэка: "
-                "old_valence=%.2f (t=%.1f) vs new_valence=%.2f (t=%.1f) -> node_id=%s "
-                "reversal_delta=%.3f penalized_markers=%s",
-                entry.valence, entry.timestamp, valence, timestamp,
-                entry.node_id, reversal_delta, entry.matched_markers,
-            )
-
-            if config.RETROSPECTIVE_IRONY_NODE_ENABLED:
-                self._create_irony_concept_node(entry, valence, timestamp)
-
-            return RetrospectiveCorrectionResult(
-                triggered=True,
-                reversed_entry=entry,
-                reversal_delta=reversal_delta,
-                penalized_markers=list(entry.matched_markers),
-            )
-
-        return RetrospectiveCorrectionResult(triggered=False)
-
-    # ----------------------------------------------------------------------
-    # c) ПОДСОЗНАТЕЛЬНОЕ ПОДКРЕПЛЕНИЕ (Reinforcement / Feedback Loop)
-    # ----------------------------------------------------------------------
 
     def apply_feedback(
         self,
@@ -577,198 +472,58 @@ class Cortex:
         matched_markers: Optional[List[str]] = None,
     ) -> FeedbackResult:
         """
-        Применяет обнаруженную валентность обратной связи (Amygdala.
-        detect_feedback_signal) к last_action_trace — то есть к СВЯЗКЕ
-        (user_input -> bot_output) предыдущего обмена.
+        Применяет реакцию пользователя к предыдущему действию.
 
-        RETROSPECTIVE CORRECTION: перед наложением нового эффекта проверяет
-        (_check_retrospective_correction), не опровергает ли этот фидбэк по
-        знаку уже применённую ранее оценку в пределах временного окна — если
-        да, прежний эффект откатывается усиленной коррекцией, а маркеры,
-        которые к нему привели, штрафуются (Amygdala.penalize_markers).
-
-        Логика самого эффекта (как раньше):
-            valence == 0.0        -> нейтрально, ничего не делаем.
-            last_action_trace None -> нет что подкреплять, no_trace.
-            valence > 0  -> reinforce_node + freshness bonus / echolalia bias +.
-            valence < 0  -> penalize_node / echolalia bias -.
-
-        В конце текущая связка регистрируется в self.feedback_history —
-        окне, которое использует _check_retrospective_correction на
-        последующих шагах.
+        Сам эффект на памяти считает ЯДРО (memory/reinforcement.py): там
+        дофаминовый сигнал, усиление/штраф узлов и ретроспективная
+        коррекция. Здесь остаётся только то, что касается ПЕРСОНАЖА и в
+        библиотеке памяти не нужно:
+            - настроение (радость от ошибки предсказания, а не от похвалы);
+            - склонность к эхолалии для похожего контекста.
         """
-        trace = self.last_action_trace
-        matched_markers = matched_markers or []
-
-        if valence == 0.0:
-            return FeedbackResult(
-                valence=valence, node_id=None, user_input="", bot_output="",
-                action_type="", effect="neutral", mood_state=None,
-            )
-
-        if trace is None:
-            logger.debug("[REWARD EVAL] Feedback valence=%.2f, но last_action_trace отсутствует", valence)
-            return FeedbackResult(
-                valence=valence, node_id=None, user_input="", bot_output="",
-                action_type="", effect="no_trace", mood_state=None,
-            )
-
-        # --- RETROSPECTIVE CORRECTION: сначала проверяем, не опровергает ли
-        # этот фидбэк уже применённую ранее оценку (сарказм/самокоррекция). ---
-        retrospective_result = self._check_retrospective_correction(valence, matched_markers, timestamp)
-
-        context_key = trace.user_input.strip().lower()
-        effect = "neutral"
-
-        # Обновляем вектор настроения на основе валентности фидбека —
-        # положительный отклик наставника поднимает joy/affection,
-        # негативный — anxiety.
-        # Радость идёт от ОШИБКИ предсказания награды, а не от самой похвалы.
-        # Привычное одобрение перестаёт радовать — ровно как в жизни, и ровно
-        # как габитуирует дофаминовый сигнал (см. MemoryGraph.apply_reward).
-        # Само вычисление rpe чуть ниже, поэтому настроение обновляется после
-        # него — здесь только берётся сильнейший из сигналов действия.
-        mood_state: Optional[MoodState] = None
-
-        applied_delta = 0.0
-
-        # --- ДОФАМИНОВЫЙ СИГНАЛ: ошибка предсказания награды ---
-        # Считается ДО применения эффектов, потому что именно она (а не
-        # сама валентность) задаёт темп закрепления: неожиданная похвала
-        # закрепляет сильно, полностью предсказанная — почти никак.
-        # Побочно обновляет ожидание на каждом задействованном узле.
-        reward_nodes = [trace.node_id] if trace.node_id is not None else list(trace.node_ids or [])
-        reward_signals = [
-            signal for signal in (
-                self.memory.apply_reward(node_id, valence, timestamp=timestamp)
-                for node_id in reward_nodes
-            ) if signal is not None
-        ]
-        # Один множитель на всё действие: сила самого неожиданного из
-        # задействованных узлов. Действие оценивается целиком.
-        learning_scale = (
-            max(self.memory.learning_scale(s.prediction_error) for s in reward_signals)
-            if reward_signals else 1.0
+        outcome = self.reinforcement.apply(
+            valence, timestamp=timestamp, matched_markers=matched_markers
         )
 
-        # Эмоция строится на ошибке предсказания, а не на сырой валентности.
-        # Если действие не опиралось ни на один узел (например, чистая
-        # генерация LLM), ожидать было нечему — тогда неожиданностью
-        # считается сама оценка.
-        if reward_signals:
-            congruence = max(
-                (s.prediction_error for s in reward_signals), key=abs,
+        if outcome.trace is None:
+            return FeedbackResult(
+                valence=valence, node_id=None, user_input="", bot_output="",
+                action_type="", effect=outcome.effect, mood_state=None,
             )
-        else:
-            congruence = valence
+
+        trace = outcome.trace
+
+        # Эмоция строится на ОШИБКЕ предсказания награды, а не на сырой
+        # валентности: привычное одобрение перестаёт радовать.
         mood_state = self.mood.appraise(
-            Appraisal(
-                goal_congruence=congruence,
-                coping=self.mood.coping(),
-            )
+            Appraisal(goal_congruence=outcome.congruence, coping=self.mood.coping())
         )
 
-        if valence > 0:
-            if trace.node_id is not None:
-                boost = valence * config.REWARD_POSITIVE_BOOST * learning_scale
-                self.memory.reinforce_node(trace.node_id, boost=boost, timestamp=timestamp)
-                applied_delta = boost
+        # Персона: чему научиться про собственную манеру отвечать.
+        effect = outcome.effect
+        context_key = trace.user_input.strip().lower()
 
-                # "Повышаем устойчивость" (снижаем эффективный decay_rate) —
-                # продвигаем last_accessed немного вперёд во времени, узел
-                # выглядит "свежее", чем есть, и будет медленнее угасать.
-                if timestamp is not None:
-                    self.memory.touch_node(
-                        trace.node_id,
-                        timestamp=timestamp + config.REWARD_POSITIVE_FRESHNESS_BONUS,
-                    )
-                effect = "rewarded"
-
-            elif trace.action_type in ("babbling", "blended_mimicry") and trace.node_ids:
-                # Позитивный фидбэк на лепет: усиливаем КАЖДЫЙ задействованный
-                # слог (он оказался "удачным" в этой комбинации) и укрепляем
-                # ассоциативные рёбра МЕЖДУ ними — успешная комбинация слогов
-                # запоминается как связка, зачаток будущего "слова",
-                # выкристаллизовывающегося из повторяющегося удачного лепета.
-                boost = valence * config.REWARD_POSITIVE_BOOST * learning_scale
-                for node_id in trace.node_ids:
-                    self.memory.reinforce_node(node_id, boost=boost, timestamp=timestamp)
-                self.memory.reinforce_coactivation(trace.node_ids, weight_boost=boost, timestamp=timestamp)
-                applied_delta = boost
-                effect = "rewarded"
-
-                logger.info(
-                    "[REWARD EVAL] Feedback Valence: +%.2f -> Rewarding Babble Syllables: %s",
-                    valence, trace.node_ids,
-                )
-
-            if trace.action_type == "llm_generation":
-                # Успешная смысловая генерация без памяти была подтверждена
-                # позитивным фидбэком -> снижаем вероятность эхолалии для
-                # похожего контекста в будущем.
-                self.instincts.adjust_echolalia_bias(context_key, delta=config.ECHOLALIA_BIAS_STEP)
-                if effect == "neutral":
-                    effect = "bias_adjusted"
-
-            if trace.action_type not in ("babbling", "blended_mimicry"):
-                logger.info(
-                    "[REWARD EVAL] Feedback Valence: +%.2f -> Rewarding Node ID: %s",
-                    valence, trace.node_id,
-                )
-
-        else:  # valence < 0
-            if trace.node_id is not None:
-                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY * learning_scale
-                self.memory.penalize_node(trace.node_id, penalty=penalty, timestamp=timestamp)
-                applied_delta = -penalty
-                effect = "penalized"
-
-            elif trace.action_type in ("babbling", "blended_mimicry") and trace.node_ids:
-                # Негативный фидбэк на лепет: штрафуем КАЖДЫЙ задействованный
-                # слог этой конкретной неудачной комбинации — она станет
-                # реже выбираться при следующей взвешенной выборке
-                # (см. InstinctSystem.generate_babble_response).
-                penalty = abs(valence) * config.REWARD_NEGATIVE_PENALTY * learning_scale
-                for node_id in trace.node_ids:
-                    self.memory.penalize_node(node_id, penalty=penalty, timestamp=timestamp)
-                applied_delta = -penalty
-                effect = "penalized"
-
-                logger.info(
-                    "[REWARD EVAL] Feedback Valence: %.2f -> Penalizing Babble Syllables: %s",
-                    valence, trace.node_ids,
-                )
-
-            if trace.action_type in ("echolalia", "blended_mimicry"):
-                # Эхолалия оказалась неудачной в этом контексте -> повышаем
-                # штраф на эхолалию для похожего ввода на будущее.
-                self.instincts.adjust_echolalia_bias(context_key, delta=-abs(config.ECHOLALIA_BIAS_STEP))
-                if effect == "neutral":
-                    effect = "bias_adjusted"
-
-            if trace.action_type not in ("babbling", "blended_mimicry"):
-                logger.info(
-                    "[REWARD EVAL] Feedback Valence: %.2f -> Penalizing Node ID: %s",
-                    valence, trace.node_id,
-                )
-
-        # --- Регистрируем эту связку в истории Retrospective Correction,
-        # предварительно "реабилитируя" маркеры записи, которая будет
-        # вытеснена из окна (если она никогда не была опровергнута). ---
-        self._record_feedback_history(
-            FeedbackHistoryEntry(
-                timestamp=timestamp,
-                valence=valence,
-                matched_markers=list(matched_markers),
-                node_id=trace.node_id,
-                user_input=trace.user_input,
-                bot_output=trace.bot_output,
-                action_type=trace.action_type,
-                applied_delta=applied_delta,
-                reversed=False,
-                node_ids=trace.node_ids,
+        if valence > 0 and trace.action_type == "llm_generation":
+            # Смысловая генерация подтверждена -> реже скатываться в эхо.
+            self.instincts.adjust_echolalia_bias(context_key, delta=config.ECHOLALIA_BIAS_STEP)
+            if effect == "neutral":
+                effect = "bias_adjusted"
+        elif valence < 0 and trace.action_type in ("echolalia", "blended_mimicry"):
+            # Эхо здесь не годится -> повышаем штраф на него.
+            self.instincts.adjust_echolalia_bias(
+                context_key, delta=-abs(config.ECHOLALIA_BIAS_STEP)
             )
-        )
+            if effect == "neutral":
+                effect = "bias_adjusted"
+
+        retrospective = outcome.retrospective
+        if (
+            retrospective is not None
+            and retrospective.triggered
+            and config.RETROSPECTIVE_IRONY_NODE_ENABLED
+            and retrospective.reversed_entry is not None
+        ):
+            self._create_irony_concept_node(retrospective.reversed_entry, valence, timestamp)
 
         return FeedbackResult(
             valence=valence,
@@ -778,24 +533,9 @@ class Cortex:
             action_type=trace.action_type,
             effect=effect,
             mood_state=mood_state,
-            retrospective_correction=retrospective_result,
+            retrospective_correction=retrospective,
             node_ids=trace.node_ids,
         )
-
-    def _record_feedback_history(self, entry: FeedbackHistoryEntry) -> None:
-        """
-        Добавляет запись в feedback_history. Если история уже заполнена
-        (maxlen достигнут), самая старая запись будет вытеснена deque
-        автоматически — если она НИКОГДА не была опровергнута
-        Retrospective Correction, значит её маркеры "выжили" в пределах
-        всего окна и заслуживают восстановления доверия (recover_markers).
-        """
-        if len(self.feedback_history) == self.feedback_history.maxlen:
-            oldest = self.feedback_history[0]
-            if not oldest.reversed and oldest.matched_markers:
-                self.amygdala.recover_markers(oldest.matched_markers)
-
-        self.feedback_history.append(entry)
 
     def _create_irony_concept_node(
         self,
