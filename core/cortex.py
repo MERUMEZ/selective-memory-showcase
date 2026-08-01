@@ -34,7 +34,7 @@ from typing import List, Optional
 from core.amygdala import Amygdala
 from core.instincts import InstinctSystem
 from core.mood import Appraisal, Mood, MoodState
-from memory.graph_memory import MemoryGraph, MemoryMatch, ProactiveCandidate
+from memory.graph_memory import MemoryGraph, MemoryMatch
 from memory.reinforcement import (
     ActionTrace,
     FeedbackHistoryEntry,
@@ -118,9 +118,13 @@ class Cortex:
         stm: Optional[WorkingMemory] = None,
         mood: Optional[Mood] = None,
         amygdala: Optional[Amygdala] = None,
+        persona=None,
     ):
         self.instincts = instincts or InstinctSystem()
         self.memory = memory or MemoryGraph()
+        # Самообраз — понятие персонажа, не памяти
+        from core.persona_memory import PersonaMemory
+        self.persona = persona or PersonaMemory(memory=self.memory)
         self.stm = stm or WorkingMemory()
         self.mood = mood or Mood()
         # Retrospective Correction нуждается в ТОЙ ЖЕ инстанции Amygdala,
@@ -349,7 +353,7 @@ class Cortex:
 
     def generate_proactive_message(
         self,
-        node: Optional[ProactiveCandidate],
+        node,  # ProactiveCandidate из core.persona_memory
         timestamp: Optional[float] = None,
     ) -> Optional[ProactiveMessage]:
         """
@@ -630,7 +634,7 @@ class Cortex:
         memory_recall, proactive) — бот всегда должен "помнить", кто он
         и кто его наставник, независимо от типа генерации.
         """
-        self_content = self.memory.get_self_model_content()
+        self_content = self.persona.get_self_model_content()
         user_content = self.memory.get_user_model_content()
 
         return config.TABULA_RASA_PROMPT_TEMPLATE.format(

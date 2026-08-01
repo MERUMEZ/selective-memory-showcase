@@ -27,6 +27,7 @@ from core.cortex import Cortex
 from core.drives import BoredomDrive
 from core.instincts import InstinctSystem
 from core.perception import Perception
+from core.persona_memory import PersonaMemory
 from memory.graph_memory import MemoryGraph
 from memory.database import Database
 from memory.sleep_cycle import SleepCycle
@@ -230,7 +231,10 @@ class BrainSession:
 
         db = Database(db_path=self.db_path)
         self.memory = MemoryGraph(db=db)
-        self.self_node_id, self.user_node_id = self.memory.ensure_self_and_user_nodes()
+        # Самообраз, эволюция личности и выбор темы для проактива живут в
+        # ПЕРСОНЕ, а не в памяти: библиотеке памяти эти понятия не нужны.
+        self.persona = PersonaMemory(memory=self.memory)
+        self.self_node_id, self.user_node_id = self.persona.ensure_self_and_user_nodes()
 
         self.stm = WorkingMemory()
         self.instincts = InstinctSystem()
@@ -244,6 +248,7 @@ class BrainSession:
         self.sleep_cycle = SleepCycle(
             memory=self.memory, stm=self.stm,
             instincts=self.instincts, mood=self.cortex.mood,
+            persona=self.persona,
         )
         self.boredom_drive = BoredomDrive()
 
@@ -730,7 +735,7 @@ class BrainSession:
             )
             if snapshot.boredom >= threshold:
                 last_node_id = self.activation_state.get_last_active()
-                node = self.memory.select_proactive_node(
+                node = self.persona.select_proactive_node(
                     last_active_node_id=last_node_id,
                     brain_time=brain_time,
                 )
