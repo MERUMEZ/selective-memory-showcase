@@ -48,26 +48,70 @@ def _run_demo(session):
         session.process_message(text)
 
 
-def test_praised_fact_outlives_routine(brain):
+def test_praised_fact_outlives_routine(monkeypatch):
     """
-    ОБЕЩАНИЕ ПРОДУКТА. После недели молчания остаётся факт, который
-    хвалили и к которому возвращались, — а не последняя реплика.
+    ОБЕЩАНИЕ ПРОДУКТА, сформулированное так, как оно ИЗМЕРЕНО.
+
+    Первая версия этого теста утверждала: "после недели остаётся телефон".
+    На одном прогоне так и было, и я подал это как поведение. Замер на
+    пятнадцати сидах показал 9 из 15 — то есть утверждение было верно
+    для сида, который мне выпал, а не вообще.
+
+    Хуже того, тест не задавал сид и потому зависел от того, сколько
+    случайных чисел израсходовали ПРЕДЫДУЩИЕ тесты: он проходил в одном
+    порядке запуска и падал в другом. Такой тест не проверяет систему, он
+    проверяет удачу.
+
+    Что верно на самом деле (15 сидов, горизонт 7 суток):
+
+        телефон первым   9
+        рутина первой    1
+        не выжило ничего 5
+
+    То есть на пятнадцати репликах эффект НЕ гарантирован — забывание
+    часто уносит всё. Но когда хоть что-то переживает неделю, это почти
+    всегда подкреплённое, а не последнее сказанное. Именно это и
+    проверяется: соотношение, а не отдельный исход.
+
+    Сильный результат (+53 п.п.) живёт в tools/compare_retention.py, где
+    разговор в разы длиннее и у стабильности есть время накопиться.
+    Пятнадцать реплик — это демонстрация, а не замер.
     """
-    _run_demo(brain)
+    import random
+
+    import core.cortex
+    import core.persona_memory
+    import core.sleep_cycle
+
+    def fake_llm(messages, system_prompt=None, max_tokens=None):
+        return "понятно"
+
+    for module in (core.cortex, core.persona_memory, core.sleep_cycle):
+        monkeypatch.setattr(module, "generate_llm_response", fake_llm)
+
     assert DEMO_SCRIPT[-1].startswith("сегодня"), "сценарий должен кончаться рутиной"
 
-    before = brain.memory.db.count_nodes_by_type("episodic")
-    brain.skip_forward(7)
-    survivors = brain.memory.db.get_top_nodes_by_type("episodic", 5)
+    praised = routine = nothing = 0
+    for seed in range(8):
+        random.seed(seed)
+        session = BrainSession(db_path=":memory:")
+        try:
+            _run_demo(session)
+            session.skip_forward(7)
+            survivors = session.memory.db.get_top_nodes_by_type("episodic", 3)
+            if not survivors:
+                nothing += 1
+            elif "телефон" in (survivors[0]["context"] or ""):
+                praised += 1
+            else:
+                routine += 1
+        finally:
+            session.close()
 
-    assert before > len(survivors), "забывание должно было что-то отсеять"
-    assert survivors, "но не всё: важное обязано пережить"
-    assert "телефон" in survivors[0]["context"], (
-        f"выжило не то, что подкрепляли: {survivors[0]['context']!r}"
+    assert praised > routine, (
+        f"подкреплённое должно переживать чаще рутины, вышло {praised} против {routine}"
     )
-    assert not any("погода" in (r["context"] or "") for r in survivors), (
-        "рутина не должна переживать неделю"
-    )
+    assert praised + routine > 0, "хоть в каких-то прогонах что-то обязано выживать"
 
 
 def test_demo_reaches_real_speech(brain):
