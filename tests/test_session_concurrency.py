@@ -27,13 +27,13 @@ from core.brain_session import BrainSession
 def session(monkeypatch):
     """Сессия на in-memory SQLite с заглушенной LLM (без сети)."""
     import core.cortex
-    import memory.graph_memory
+    import core.persona_memory
     import memory.sleep_cycle
 
     def fake_llm(messages, system_prompt=None, max_tokens=None):
         return "ответ"
 
-    for module in (core.cortex, memory.graph_memory, memory.sleep_cycle):
+    for module in (core.cortex, core.persona_memory, memory.sleep_cycle):
         monkeypatch.setattr(module, "generate_llm_response", fake_llm)
 
     brain = BrainSession(db_path=":memory:")
