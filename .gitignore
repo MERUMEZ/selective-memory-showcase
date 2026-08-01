@@ -45,3 +45,5 @@ ENGRAM_FULL_DUMP.md
 .idea/
 .DS_Store
 Thumbs.db
+# --- Данные бенчмарков (качаются отдельно, сотни МБ) ---
+storage/bench/
