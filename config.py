@@ -85,7 +85,7 @@ LOG_FILE = _get_str("LOG_FILE", str(Path(LOG_DIR) / "brain.log"))
 # 0.35 + типичное возбуждение ~0.4 * 0.25 даёт те же ~0.45 эффективного
 # порога, что были откалиброваны ранее, — но теперь нагрузка действительно
 # модулирует запись, а не игнорируется.
-BASE_PLASTICITY_THRESHOLD = _get_float("BASE_PLASTICITY_THRESHOLD", 0.35)
+BASE_PLASTICITY_THRESHOLD = _get_float("BASE_PLASTICITY_THRESHOLD", 0.25)
 
 # Порог может динамически "плыть" в момент стресса (см. STRESS блок ниже).
 # Здесь — насколько сильно порог поднимается при перегрузке (защитный эффект).
@@ -1061,7 +1061,7 @@ BABBLING_SYLLABLE_POOL_SIZE = _get_int("BABBLING_SYLLABLE_POOL_SIZE", 30)
 # важным, но ни разу не пригодившееся, уходило в ноль вместе с рутиной.
 MEMORY_FLOOR_MAX = _get_float("MEMORY_FLOOR_MAX", 0.25)
 
-SURPRISE_FULL_CONTENT_TOKENS = _get_int("SURPRISE_FULL_CONTENT_TOKENS", 2)
+SURPRISE_FULL_CONTENT_TOKENS = _get_int("SURPRISE_FULL_CONTENT_TOKENS", 3)
 
 SURPRISE_LEXICAL_WEIGHT = _get_float("SURPRISE_LEXICAL_WEIGHT", 0.6)
 SURPRISE_STRUCTURAL_WEIGHT = _get_float("SURPRISE_STRUCTURAL_WEIGHT", 0.4)
