@@ -13,7 +13,7 @@ EXCLUDE_DIRS = {
 INCLUDE_EXTENSIONS = {".py", ".txt", ".md"}
 EXCLUDE_FILES = {".gitignore"}
 
-OUTPUT_FILE = os.path.join(ROOT, "ENGRAM_FULL_DUMP.md")
+OUTPUT_FILE = os.path.join(ROOT, "FULL_DUMP.md")
 
 
 def build_tree(root):
@@ -60,7 +60,7 @@ def main():
     files = collect_files(ROOT)
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-        out.write("# ENGRAM — Полный дамп кодовой базы\n\n")
+        out.write("# selective-memory — Полный дамп кодовой базы\n\n")
         out.write("## 1. Дерево проекта\n\n```\n")
         out.write(tree_str)
         out.write("\n```\n\n")

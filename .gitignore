@@ -6,14 +6,23 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+.pytest_cache/
 venv/
 .venv/
 env/
 
 # --- Базы данных (per-user "мозги", генерируются на сервере) ---
-storage/*.db
-storage/brains/*.db
-storage/test_brains/*.db
+# Это ЧУЖИЕ переписки: узлы хранят текст сообщений, а имя файла — telegram
+# id человека. В публичный репозиторий им нельзя.
+#
+# Шаблон нарочно кончается на *, а не на .db: прежний storage/brains/*.db
+# не поймал storage/brains/424242424.db.backup, и живая база пролежала
+# отслеживаемой до ревизии перед публикацией.
+storage/*.db*
+storage/brains/*
+storage/test_brains/*
+!storage/brains/.gitkeep
+!storage/test_brains/.gitkeep
 *.db-journal
 *.db-wal
 *.db-shm
@@ -38,7 +47,7 @@ dist/
 # Дамп кодовой базы пересобирается generate_full_dump.py за секунду.
 # Хранить в git копию всего репозитория внутри репозитория незачем: она
 # устаревает с первым же коммитом и раздувает каждый диф на 9 тысяч строк.
-ENGRAM_FULL_DUMP.md
+FULL_DUMP.md
 
 # --- IDE / OS ---
 .vscode/
