@@ -1,7 +1,16 @@
 # Витрина: цифровой ребёнок
 
-Это **демонстрация** библиотеки [selectivemem](README.md), а не продукт. В
-пакет она не входит и в `pip install` не едет.
+Это **демонстрация** библиотеки [selective-memory](https://github.com/MERUMEZ/selective-memory),
+а не продукт. В пакет она не входит и в `pip install selective-memory` не едет.
+
+Витрина живёт в отдельном репозитории намеренно. Тот, кому нужна память,
+ставит пакет и не тащит с собой телеграм-бота, характер и речевые стадии.
+Тот, кому интересно посмотреть на память в работе, приходит сюда.
+
+```bash
+pip install selective-memory     # сама память
+pip install -r requirements.txt  # то, что нужно витрине сверх неё
+```
 
 ## Зачем она вообще нужна
 
@@ -139,4 +148,4 @@ python tools/render_memory.py storage/brains/123.db -o brain.html
 
 `compare_memory` показывает **отрицательный** результат и оставлен
 намеренно: на равномерных вопросах организм не лучше случайной выборки.
-Подробности — в [AUDIT.md](AUDIT.md).
+Подробности — в [AUDIT.md](https://github.com/MERUMEZ/selective-memory/blob/master/AUDIT.md).
