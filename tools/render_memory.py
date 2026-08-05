@@ -89,7 +89,7 @@ class Node:
 class Snapshot:
     db_path: str
     nodes: List[Node]
-    edges: List[Tuple[int, int, float]]
+    edges: List[Tuple[int, int, float, str]]
     mastered_words: int
     exposed_words: int
     has_stability: bool
@@ -141,8 +141,16 @@ def load_snapshot(db_path: str) -> Snapshot:
         )
 
     edges = [
-        (r["node_from"], r["node_to"], r["weight"])
-        for r in conn.execute("SELECT node_from, node_to, weight FROM edges")
+        (r["node_from"], r["node_to"], r["weight"], r[3] or "")
+        for r in conn.execute(
+            # ТИП СВЯЗИ НУЖЕН НА СТРАНИЦЕ. Их два, и они рождаются
+            # по-разному: "association" — от совместного припоминания,
+            # "temporal" — от соседства во времени. Показывать граф, не
+            # различая их, значит скрывать самое интересное: второй путь
+            # работает там, где первый глохнет от перегрузки ключа.
+            "SELECT node_from, node_to, weight, "
+            "COALESCE(edge_type, '') FROM edges"
+        )
     ]
 
     mastery = config.VOCABULARY_MASTERY_MIN_WEIGHT
@@ -227,7 +235,7 @@ def speech_stage(mastered: int) -> Tuple[int, str, Optional[int]]:
 # --------------------------------------------------------------------------
 
 def layout_graph(
-    nodes: List[Node], edges: List[Tuple[int, int, float]],
+    nodes: List[Node], edges: List[Tuple[int, int, float, str]],
     width: int = 900, height: int = 620, iterations: int = 220,
 ) -> Dict[int, Tuple[float, float]]:
     """
@@ -248,7 +256,7 @@ def layout_graph(
         for _ in ids
     ]
 
-    incident = [(index[a], index[b], w) for a, b, w in edges if a in index and b in index]
+    incident = [(index[a], index[b], w) for a, b, w, *_ in edges if a in index and b in index]
 
     area = width * height
     k = math.sqrt(area / max(1, count))
@@ -298,25 +306,65 @@ def layout_graph(
 # --------------------------------------------------------------------------
 
 def render_svg(nodes: List[Node], edges, positions, width=900, height=620) -> str:
+    """
+    Граф памяти с данными на каждом элементе.
+
+    ПОЧЕМУ НЕ <title>. Стандартная подсказка SVG появляется через секунду,
+    не оформляется и не показывает связи — на ней ничего не расскажешь.
+    Здесь у каждого кружка и каждой линии лежат data-атрибуты, а панель
+    рядом заполняется мгновенно при наведении. Разговаривать с человеком,
+    водя мышью по графу, можно только так.
+
+    <title> всё же оставлен: если JavaScript отключён, подсказка
+    деградирует до стандартной, а не исчезает совсем.
+    """
     if not nodes:
         return '<p class="empty">Граф пуст — мозгу ещё нечего показать.</p>'
 
     by_id = {n.id: n for n in nodes}
+    degree: dict = {}
+    for a, b, *_ in edges:
+        degree[a] = degree.get(a, 0) + 1
+        degree[b] = degree.get(b, 0) + 1
+
     parts = [
-        f'<svg viewBox="0 0 {width} {height}" class="graph" '
+        f'<svg viewBox="0 0 {width} {height}" class="graph" id="graph" '
         f'xmlns="http://www.w3.org/2000/svg" role="img" '
         f'aria-label="Граф памяти: {len(nodes)} узлов, {len(edges)} связей">'
     ]
 
-    for a, b, weight in edges:
+    for item in edges:
+        a, b, weight = item[0], item[1], item[2]
+        edge_type = item[3] if len(item) > 3 else ""
         if a not in positions or b not in positions:
             continue
         x1, y1 = positions[a]
         x2, y2 = positions[b]
         opacity = 0.15 + 0.55 * min(1.0, weight)
+        na, nb = by_id.get(a), by_id.get(b)
+        # ТИП СВЯЗИ ЧАСТО ПУСТ, и врать про него нельзя. Библиотека
+        # помечает свои связи ("association" — от совместного
+        # припоминания, "temporal" — от соседства во времени), но граф
+        # языка строится другим путём и метки не ставит: в
+        # демонстрационном мозге пусты все 106 рёбер.
+        #
+        # Поэтому, когда метки нет, подпись выводится из того, ЧТО
+        # соединено. Это честно и говорит ровно то, что известно.
+        if not edge_type:
+            kinds = {na.node_type if na else None, nb.node_type if nb else None}
+            if kinds <= {"word", "syllable"}:
+                edge_type = "язык: слова встречались рядом"
+            elif kinds <= {"episodic", "episode_summary", "concept"}:
+                edge_type = "память: узлы связаны"
+            else:
+                edge_type = "смешанная связь"
         parts.append(
             f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-            f'class="edge" stroke-width="{0.4 + 2.4 * min(1.0, weight):.2f}" '
+            f'class="edge" data-a="{a}" data-b="{b}" '
+            f'data-w="{weight:.3f}" data-t="{escape(edge_type)}" '
+            f'data-from="{escape((na.context if na else "")[:60])}" '
+            f'data-to="{escape((nb.context if nb else "")[:60])}" '
+            f'stroke-width="{0.4 + 2.4 * min(1.0, weight):.2f}" '
             f'stroke-opacity="{opacity:.2f}"/>'
         )
 
@@ -325,15 +373,21 @@ def render_svg(nodes: List[Node], edges, positions, width=900, height=620) -> st
         radius = 4 + 14 * min(1.0, node.weight)
         color = TYPE_COLORS.get(node.node_type, TYPE_COLORS[None])
         label = TYPE_LABELS.get(node.node_type, node.node_type or "без типа")
-        preview = (node.context or "").strip().replace("\n", " ")[:70]
+        preview = (node.context or "").strip().replace("\n", " ")[:140]
+        answer = (node.response or "").strip().replace("\n", " ")[:100]
+        forget = human_duration(seconds_until_forgotten(node))
         tooltip = (
-            f"#{node.id} · {label}\n{preview}\n"
+            f"#{node.id} · {label}\n{preview[:70]}\n"
             f"вес {node.weight:.3f} · стабильность {node.stability:.1f}\n"
-            f"забудется через: {human_duration(seconds_until_forgotten(node))}"
+            f"забудется через: {forget}"
         )
         parts.append(
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="{color}" '
-            f'class="node"><title>{escape(tooltip)}</title></circle>'
+            f'class="node" data-id="{node.id}" data-kind="{escape(label)}" '
+            f'data-text="{escape(preview)}" data-answer="{escape(answer)}" '
+            f'data-w="{node.weight:.3f}" data-s="{node.stability:.1f}" '
+            f'data-forget="{escape(forget)}" data-deg="{degree.get(node.id, 0)}">'
+            f'<title>{escape(tooltip)}</title></circle>'
         )
 
     parts.append("</svg>")
@@ -435,7 +489,8 @@ def render_html(snap: Snapshot, include_lexical: bool, note: str = "") -> str:
         and n.node_type not in INSTRUMENT_TYPES
     ]
     visible_ids = {n.id for n in visible}
-    visible_edges = [(a, b, w) for a, b, w in snap.edges if a in visible_ids and b in visible_ids]
+    visible_edges = [(a, b, w, t) for a, b, w, t in snap.edges
+                     if a in visible_ids and b in visible_ids]
 
     positions = layout_graph(visible, visible_edges)
     stage, stage_name, next_threshold = speech_stage(snap.mastered_words)
@@ -571,6 +626,29 @@ code {{ font-size:12px; }}
 .moodrow b {{ text-align:right; font-variant-numeric:tabular-nums; font-weight:560; color:var(--muted); }}
 .moodrow .bar {{ margin-top:0; }}
 .moodrow.arousal {{ margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }}
+
+/* --- ГРАФ, С КОТОРЫМ МОЖНО РАЗГОВАРИВАТЬ -------------------------------
+   Наведение обязано отвечать МГНОВЕННО и показывать не только узел, но и
+   его связи: без этого граф остаётся картинкой, по которой нечего
+   рассказать. Приглушение остального — единственный способ показать
+   окрестность узла на сотне кружков. */
+.node {{ cursor: pointer; transition: opacity .12s; }}
+.node:hover {{ stroke: #222; stroke-width: 2; }}
+.edge {{ transition: opacity .12s; }}
+.graph.focused .node {{ opacity: .12; }}
+.graph.focused .edge {{ stroke-opacity: .05 !important; }}
+.graph.focused .node.on {{ opacity: 1; }}
+.graph.focused .edge.on {{ stroke-opacity: .95 !important; stroke: #b4553a; }}
+#tip {{
+  position: sticky; top: 12px; z-index: 5;
+  margin: 0 0 14px; padding: 12px 14px; min-height: 74px;
+  border: 1px solid #e2ddd6; border-radius: 8px; background: #fffdfa;
+  font-size: 14px; line-height: 1.45; color: #333;
+}}
+#tip .hint {{ color: #8a837a; }}
+#tip b {{ color: #111; }}
+#tip .meta {{ color: #6a635a; font-size: 13px; }}
+#tip .pin {{ color: #b4553a; font-size: 12px; }}
 </style>
 
 <div class="wrap">
@@ -601,6 +679,8 @@ code {{ font-size:12px; }}
   </div>
 
   <h2>Граф памяти</h2>
+  <div id="tip"><span class="hint">Наведите на узел или связь — здесь появится,
+  что это. Щелчок закрепляет, второй отпускает.</span></div>
   <div class="graphbox">{render_svg(visible, visible_edges, positions)}</div>
   <div class="chips">{legend}</div>
   <p class="sub" style="margin-top:10px">
@@ -620,6 +700,111 @@ code {{ font-size:12px; }}
     <tr><th>Слово</th><th class="num">Вес</th><th class="num">Забудется через</th><th>Освоено</th></tr>
     {word_rows}
   </table></div>
+
+<script>
+/* Страница самодостаточна: ни одного внешнего запроса, весь разбор здесь.
+   Если этот скрипт не выполнится, у узлов останется штатный <title>. */
+(function () {{
+  var svg = document.getElementById("graph");
+  var tip = document.getElementById("tip");
+  if (!svg || !tip) return;
+
+  var HINT = tip.innerHTML;
+  var pinned = null;
+
+  function esc(v) {{ return (v || "").replace(/</g, "&lt;"); }}
+
+  function showNode(el) {{
+    var text = esc(el.dataset.text) || "<i>без текста</i>";
+    var answer = esc(el.dataset.answer);
+    tip.innerHTML =
+      "<b>#" + el.dataset.id + " · " + esc(el.dataset.kind) + "</b><br>" +
+      text +
+      (answer ? "<br><span class='meta'>ответ: " + answer + "</span>" : "") +
+      "<br><span class='meta'>вес " + el.dataset.w +
+      " · стабильность " + el.dataset.s +
+      " · связей " + el.dataset.deg +
+      " · забудется через " + esc(el.dataset.forget) + "</span>" +
+      (pinned ? "<br><span class='pin'>закреплено — щёлкните ещё раз</span>" : "");
+  }}
+
+  function showEdge(el) {{
+    tip.innerHTML =
+      "<b>Связь · " + esc(el.dataset.t) + "</b><br>" +
+      esc(el.dataset.from) + " <span class='meta'>&harr;</span> " +
+      esc(el.dataset.to) +
+      "<br><span class='meta'>вес " + el.dataset.w + "</span>" +
+      (pinned ? "<br><span class='pin'>закреплено — щёлкните ещё раз</span>" : "");
+  }}
+
+  function clear() {{
+    svg.classList.remove("focused");
+    Array.prototype.forEach.call(svg.querySelectorAll(".on"),
+      function (n) {{ n.classList.remove("on"); }});
+  }}
+
+  /* Подсветка окрестности: сам узел, его связи и то, что на другом конце.
+     Именно это делает граф читаемым — иначе на двухстах кружках не видно,
+     с чем узел вообще соединён. */
+  function focusNode(el) {{
+    clear();
+    svg.classList.add("focused");
+    el.classList.add("on");
+    var id = el.dataset.id;
+    var near = {{}};
+    Array.prototype.forEach.call(svg.querySelectorAll(".edge"), function (e) {{
+      if (e.dataset.a === id || e.dataset.b === id) {{
+        e.classList.add("on");
+        near[e.dataset.a === id ? e.dataset.b : e.dataset.a] = 1;
+      }}
+    }});
+    Array.prototype.forEach.call(svg.querySelectorAll(".node"), function (n) {{
+      if (near[n.dataset.id]) n.classList.add("on");
+    }});
+  }}
+
+  function focusEdge(el) {{
+    clear();
+    svg.classList.add("focused");
+    el.classList.add("on");
+    Array.prototype.forEach.call(svg.querySelectorAll(".node"), function (n) {{
+      if (n.dataset.id === el.dataset.a || n.dataset.id === el.dataset.b) {{
+        n.classList.add("on");
+      }}
+    }});
+  }}
+
+  function handle(target, sticky) {{
+    if (target.classList.contains("node")) {{
+      focusNode(target); showNode(target); return true;
+    }}
+    if (target.classList.contains("edge")) {{
+      focusEdge(target); showEdge(target); return true;
+    }}
+    return false;
+  }}
+
+  svg.addEventListener("mouseover", function (ev) {{
+    if (pinned) return;
+    handle(ev.target);
+  }});
+
+  svg.addEventListener("mouseleave", function () {{
+    if (pinned) return;
+    clear();
+    tip.innerHTML = HINT;
+  }});
+
+  /* Закрепление нужно, чтобы можно было убрать руку с мыши и говорить,
+     а не удерживать курсор на кружке всё время рассказа. */
+  svg.addEventListener("click", function (ev) {{
+    if (pinned === ev.target) {{
+      pinned = null; clear(); tip.innerHTML = HINT; return;
+    }}
+    if (handle(ev.target)) {{ pinned = ev.target; handle(ev.target); }}
+  }});
+}})();
+</script>
 </div>
 """
 
