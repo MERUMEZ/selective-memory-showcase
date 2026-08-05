@@ -97,40 +97,68 @@ code { font-size:12px; }
 #tip b { color: #111; }
 #tip .meta { color: #6a635a; font-size: 13px; }
 #tip .pin { color: #b4553a; font-size: 12px; }
+.gate { display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 8px; }
+.gate-col { flex: 1 1 320px; min-width: 280px; }
+.gate-col h3 { margin: 0 0 6px; font-size: 14px; }
+.gate-col h3.keep { color: #3d7a4d; }
+.gate-col h3.drop { color: #a2564a; }
 </style>
 
 <div class="wrap">
   <h1>Память мозга</h1>
-  <p class="sub">docs/demo_brain.db · снимок 2026-08-05 16:20 UTC</p>
+  <p class="sub">docs/demo_brain.db · снимок 2026-08-05 20:30 UTC</p>
   <p style="margin:0 0 18px;padding:10px 14px;border-left:3px solid #c99;background:#fff8f8;color:#633;font-size:14px">Демонстрационный снимок. Разговор вымышлен и прогнан через настоящий движок — ничьей личной переписки здесь нет.</p>
+  
+  <h2>Что сделала память</h2>
+  <p class="sub">Решение принимается в момент события, а не сжатием потом.
+  Отсеянная реплика следа не оставляет — поэтому эти решения записаны при
+  сборке снимка, а не восстановлены из базы.</p>
+  <div class="cards">
+    <div class="card"><div class="k">Показано реплик</div><div class="v">65</div></div>
+    <div class="card"><div class="k">Записано</div><div class="v">23</div></div>
+    <div class="card"><div class="k">Доля записи</div><div class="v">35%</div></div>
+  </div>
+  <p class="sub">Ниже — полоса вокруг порога: не крайние случаи, а те, где
+  решение было близким. Одна и та же новизна уходит в разные стороны, и это
+  не сбой: порог НЕ ПОСТОЯНЕН — он поднимается при перегрузке, то есть
+  уставший организм пишет меньше. Плотность считается произведением, а не
+  суммой: значимость умножает пластичность, которую новизна уже открыла.</p>
+  <div class="gate">
+    <div class="gate-col"><h3 class="keep">Едва прошло</h3><table><tr><th>реплика</th><th class="num">новизна</th><th class="num">значимость</th></tr><tr><td>привет снова</td><td class="num">0.47</td><td class="num">0.06</td></tr><tr><td>привет ещё раз</td><td class="num">0.64</td><td class="num">0.04</td></tr><tr><td>как дела</td><td class="num">0.67</td><td class="num">0.04</td></tr><tr><td>ладно, пока</td><td class="num">0.67</td><td class="num">0.05</td></tr><tr><td>просто зашёл</td><td class="num">0.67</td><td class="num">0.06</td></tr></table></div>
+    <div class="gate-col"><h3 class="drop">Едва не прошло</h3><table><tr><th>реплика</th><th class="num">новизна</th><th class="num">значимость</th></tr><tr><td>ничего нового</td><td class="num">0.67</td><td class="num">0.06</td></tr><tr><td>до связи</td><td class="num">0.67</td><td class="num">0.04</td></tr><tr><td>не за что</td><td class="num">0.64</td><td class="num">0.02</td></tr><tr><td>ничего себе</td><td class="num">0.51</td><td class="num">0.05</td></tr><tr><td>нормально всё</td><td class="num">0.50</td><td class="num">0.06</td></tr></table></div>
+  </div>
+  <p class="sub">На полном наборе LongMemEval (500 вопросов, 246&nbsp;750
+  реплик) библиотека записывает <b>23.2%</b> и находит нужное с
+  <b>R@1&nbsp;67.0%</b>, <b>R@10&nbsp;81.0%</b>.</p>
+
 
   
 
   <h2 style="margin-top:0">Что случилось с последним сообщением</h2>
   <div class="panel">
-  <div class="said">ладно, пока</div>
+  <div class="said">всё, до связи</div>
   <div class="gauge">
-    <i class="fill over" style="width:35.1%"></i>
-    <b class="mark" style="left:35.1%"></b>
+    <i class="fill" style="width:24.9%"></i>
+    <b class="mark" style="left:33.0%"></b>
   </div>
   <div class="gaugelabels">
-    <span>плотность 0.351</span><span>порог 0.351</span>
+    <span>плотность 0.249</span><span>порог 0.330</span>
   </div>
-  <div class="verdictrow"><span class="verdict yes">записано</span><span class="gapnote">плотность выше порога на 0.000</span></div>
+  <div class="verdictrow"><span class="verdict no">не записано</span><span class="gapnote">не хватило 0.081 до порога</span></div>
   <div class="pair">
-    <div><span class="k">удивление</span><span class="v">0.667</span>
+    <div><span class="k">удивление</span><span class="v">0.478</span>
       <span class="n">насколько разошлось с уже известным</span></div>
-    <div><span class="k">эмоция</span><span class="v">0.054</span>
+    <div><span class="k">эмоция</span><span class="v">0.041</span>
       <span class="n">насколько задело</span></div>
   </div>
 </div>
 
   <h2>Состояние организма</h2>
   <div class="panel">
-  <div class="moodrow"><span>радость</span><div class="bar"><i style="width:23%"></i></div><b>0.23</b></div><div class="moodrow"><span>любопытство</span><div class="bar"><i style="width:91%"></i></div><b>0.91</b></div><div class="moodrow"><span>тревога</span><div class="bar"><i style="width:50%"></i></div><b>0.50</b></div><div class="moodrow"><span>привязанность</span><div class="bar"><i style="width:31%"></i></div><b>0.31</b></div>
+  <div class="moodrow"><span>радость</span><div class="bar"><i style="width:33%"></i></div><b>0.33</b></div><div class="moodrow"><span>любопытство</span><div class="bar"><i style="width:83%"></i></div><b>0.83</b></div><div class="moodrow"><span>тревога</span><div class="bar"><i style="width:28%"></i></div><b>0.28</b></div><div class="moodrow"><span>привязанность</span><div class="bar"><i style="width:46%"></i></div><b>0.46</b></div>
   <div class="moodrow arousal"><span>возбуждение</span>
-    <div class="bar"><i style="width:40%"></i></div>
-    <b>0.40</b></div>
+    <div class="bar"><i style="width:32%"></i></div>
+    <b>0.32</b></div>
   <p class="sub" style="margin:10px 0 0">в рабочем режиме</p>
 </div>
 
@@ -138,87 +166,96 @@ code { font-size:12px; }
   <div class="cards">
     <div class="card"><div class="k">Стадия речи</div><div class="v">1</div>
       <div class="n">простые фразы</div></div>
-    <div class="card"><div class="k">Словарь освоен</div><div class="v">15</div>
-      <div class="n">услышано 78</div>
-      <div class="bar"><i style="width:10%"></i></div>
-      <div class="n">15 / 150</div></div>
-    <div class="card"><div class="k">Воспоминаний</div><div class="v">20</div>
+    <div class="card"><div class="k">Словарь освоен</div><div class="v">25</div>
+      <div class="n">услышано 97</div>
+      <div class="bar"><i style="width:17%"></i></div>
+      <div class="n">25 / 150</div></div>
+    <div class="card"><div class="k">Воспоминаний</div><div class="v">23</div>
       <div class="n">эпизоды и понятия</div></div>
-    <div class="card"><div class="k">Связей</div><div class="v">106</div>
-      <div class="n">всего узлов 224</div></div>
+    <div class="card"><div class="k">Связей</div><div class="v">54</div>
+      <div class="n">всего узлов 269</div></div>
   </div>
 
   <h2>Граф памяти</h2>
   <div id="tip"><span class="hint">Наведите на узел или связь — здесь появится,
   что это. Щелчок закрепляет, второй отпускает.</span></div>
-  <div class="graphbox"><svg viewBox="0 0 900 620" class="graph" id="graph" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Граф памяти: 22 узлов, 16 связей"><line x1="159.1" y1="590.0" x2="242.2" y2="590.0" class="edge" data-a="200" data-b="210" data-w="0.266" data-t="память: узлы связаны" data-from="какие у меня планы на май" data-to="родители живут в Новосибирске" stroke-width="1.04" stroke-opacity="0.30"/><line x1="306.0" y1="459.9" x2="411.6" y2="590.0" class="edge" data-a="69" data-b="100" data-w="0.133" data-t="память: узлы связаны" data-from="у меня аллергия на пенициллин, это важно" data-to="погода сегодня нормальная" stroke-width="0.72" stroke-opacity="0.22"/><line x1="306.0" y1="459.9" x2="328.3" y2="590.0" class="edge" data-a="69" data-b="184" data-w="0.133" data-t="память: узлы связаны" data-from="у меня аллергия на пенициллин, это важно" data-to="погода опять та же" stroke-width="0.72" stroke-opacity="0.22"/><line x1="306.0" y1="459.9" x2="152.7" y2="470.0" class="edge" data-a="69" data-b="191" data-w="0.133" data-t="память: узлы связаны" data-from="у меня аллергия на пенициллин, это важно" data-to="привет снова" stroke-width="0.72" stroke-opacity="0.22"/><line x1="306.0" y1="459.9" x2="159.1" y2="590.0" class="edge" data-a="69" data-b="200" data-w="0.133" data-t="память: узлы связаны" data-from="у меня аллергия на пенициллин, это важно" data-to="какие у меня планы на май" stroke-width="0.72" stroke-opacity="0.22"/><line x1="306.0" y1="459.9" x2="242.2" y2="590.0" class="edge" data-a="69" data-b="210" data-w="0.133" data-t="память: узлы связаны" data-from="у меня аллергия на пенициллин, это важно" data-to="родители живут в Новосибирске" stroke-width="0.72" stroke-opacity="0.22"/><line x1="411.6" y1="590.0" x2="328.3" y2="590.0" class="edge" data-a="100" data-b="184" data-w="0.133" data-t="память: узлы связаны" data-from="погода сегодня нормальная" data-to="погода опять та же" stroke-width="0.72" stroke-opacity="0.22"/><line x1="411.6" y1="590.0" x2="152.7" y2="470.0" class="edge" data-a="100" data-b="191" data-w="0.133" data-t="память: узлы связаны" data-from="погода сегодня нормальная" data-to="привет снова" stroke-width="0.72" stroke-opacity="0.22"/><line x1="411.6" y1="590.0" x2="159.1" y2="590.0" class="edge" data-a="100" data-b="200" data-w="0.133" data-t="память: узлы связаны" data-from="погода сегодня нормальная" data-to="какие у меня планы на май" stroke-width="0.72" stroke-opacity="0.22"/><line x1="411.6" y1="590.0" x2="242.2" y2="590.0" class="edge" data-a="100" data-b="210" data-w="0.133" data-t="память: узлы связаны" data-from="погода сегодня нормальная" data-to="родители живут в Новосибирске" stroke-width="0.72" stroke-opacity="0.22"/><line x1="328.3" y1="590.0" x2="152.7" y2="470.0" class="edge" data-a="184" data-b="191" data-w="0.133" data-t="память: узлы связаны" data-from="погода опять та же" data-to="привет снова" stroke-width="0.72" stroke-opacity="0.22"/><line x1="328.3" y1="590.0" x2="159.1" y2="590.0" class="edge" data-a="184" data-b="200" data-w="0.133" data-t="память: узлы связаны" data-from="погода опять та же" data-to="какие у меня планы на май" stroke-width="0.72" stroke-opacity="0.22"/><line x1="328.3" y1="590.0" x2="242.2" y2="590.0" class="edge" data-a="184" data-b="210" data-w="0.133" data-t="память: узлы связаны" data-from="погода опять та же" data-to="родители живут в Новосибирске" stroke-width="0.72" stroke-opacity="0.22"/><line x1="152.7" y1="470.0" x2="159.1" y2="590.0" class="edge" data-a="191" data-b="200" data-w="0.133" data-t="память: узлы связаны" data-from="привет снова" data-to="какие у меня планы на май" stroke-width="0.72" stroke-opacity="0.22"/><line x1="152.7" y1="470.0" x2="242.2" y2="590.0" class="edge" data-a="191" data-b="210" data-w="0.133" data-t="память: узлы связаны" data-from="привет снова" data-to="родители живут в Новосибирске" stroke-width="0.72" stroke-opacity="0.22"/><line x1="870.0" y1="156.5" x2="645.0" y2="30.0" class="edge" data-a="218" data-b="224" data-w="0.150" data-t="память: узлы связаны" data-from="в Новосибирске зимой доходит до сорока" data-to="ладно, пока" stroke-width="0.76" stroke-opacity="0.23"/><circle cx="30.0" cy="185.3" r="4.0" fill="#5b8def" class="node" data-id="15" data-kind="эпизод" data-text="привет, давай знакомиться" data-answer="да-да-да ко-ко" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#15 · эпизод
+  <div class="graphbox"><svg viewBox="0 0 900 620" class="graph" id="graph" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Граф памяти: 25 узлов, 4 связей"><line x1="870.0" y1="30.0" x2="870.0" y2="149.8" class="edge" data-a="160" data-b="251" data-w="0.030" data-t="память: узлы связаны" data-from="Мира ещё реставрирует пианино" data-to="привет ещё раз" stroke-width="0.47" stroke-opacity="0.17"/><line x1="870.0" y1="389.9" x2="870.0" y2="476.7" class="edge" data-a="131" data-b="264" data-w="0.277" data-t="память: узлы связаны" data-from="я не ем мясо уже три года" data-to="давно не виделись" stroke-width="1.07" stroke-opacity="0.30"/><line x1="870.0" y1="389.9" x2="870.0" y2="295.2" class="edge" data-a="131" data-b="224" data-w="0.144" data-t="память: узлы связаны" data-from="я не ем мясо уже три года" data-to="ладно, пока" stroke-width="0.75" stroke-opacity="0.23"/><line x1="870.0" y1="295.2" x2="870.0" y2="476.7" class="edge" data-a="224" data-b="264" data-w="0.144" data-t="память: узлы связаны" data-from="ладно, пока" data-to="давно не виделись" stroke-width="0.75" stroke-opacity="0.23"/><circle cx="30.0" cy="407.2" r="4.0" fill="#5b8def" class="node" data-id="15" data-kind="эпизод" data-text="привет, давай знакомиться" data-answer="при-при-при ться-ться-ться-ться" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#15 · эпизод
 привет, давай знакомиться
 вес 0.000 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="749.0" cy="30.0" r="4.1" fill="#5b8def" class="node" data-id="82" data-kind="эпизод" data-text="как дела" data-answer="нте-нте-нте зна-ра-рги-зна" data-w="0.005" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#82 · эпизод
-как дела
-вес 0.005 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="55.6" cy="590.0" r="4.1" fill="#5b8def" class="node" data-id="76" data-kind="эпизод" data-text="сестру зовут Мира" data-answer="зовут сестру я-я" data-w="0.007" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#76 · эпизод
-сестру зовут Мира
-вес 0.007 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="384.9" cy="30.0" r="4.1" fill="#5b8def" class="node" data-id="34" data-kind="эпизод" data-text="меня зовут Паша, я бэкенд-разработчик" data-answer="меня бэ-бэ вет-вет-вет-вет" data-w="0.007" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#34 · эпизод
-меня зовут Паша, я бэкенд-разработчик
-вес 0.007 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="870.0" cy="517.2" r="4.1" fill="#5b8def" class="node" data-id="50" data-kind="эпизод" data-text="работаю в финтехе, пишу на питоне" data-answer="вут-вут-вут нте-нте-нте" data-w="0.007" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#50 · эпизод
-работаю в финтехе, пишу на питоне
-вес 0.007 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="30.0" cy="590.0" r="4.1" fill="#5b8def" class="node" data-id="90" data-kind="эпизод" data-text="Мира разводит спаниелей" data-answer="мира разводит ра-ра-ра-тчик" data-w="0.007" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#90 · эпизод
-Мира разводит спаниелей
-вес 0.007 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="70.7" cy="30.0" r="4.4" fill="#5b8def" class="node" data-id="112" data-kind="эпизод" data-text="лечу в Стамбул двадцатого мая" data-answer="лечу ле-ле-бэ-ле бо-бо-бо" data-w="0.028" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#112 · эпизод
-лечу в Стамбул двадцатого мая
-вес 0.028 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="185.3" cy="30.0" r="4.4" fill="#5b8def" class="node" data-id="148" data-kind="эпизод" data-text="кстати рейс перенесли на двадцать второе" data-answer="на не-не-не бо-бо-жно" data-w="0.029" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#148 · эпизод
-кстати рейс перенесли на двадцать второе
-вес 0.029 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="870.0" cy="590.0" r="4.4" fill="#5b8def" class="node" data-id="131" data-kind="эпизод" data-text="я не ем мясо уже три года" data-answer="лей-лей я-я-тчик" data-w="0.029" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#131 · эпизод
-я не ем мясо уже три года
-вес 0.029 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="835.8" cy="30.0" r="4.4" fill="#5b8def" class="node" data-id="160" data-kind="эпизод" data-text="Мира ещё реставрирует пианино" data-answer="мира ещё а-а-ра-а при-при-при" data-w="0.030" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#160 · эпизод
-Мира ещё реставрирует пианино
-вес 0.030 · стабильность 1.0
-забудется через: уже забыт</title></circle><circle cx="411.6" cy="590.0" r="4.6" fill="#5b8def" class="node" data-id="100" data-kind="эпизод" data-text="погода сегодня нормальная" data-answer="погода э-э ци-ци" data-w="0.046" data-s="2.2" data-forget="уже забыт" data-deg="5"><title>#100 · эпизод
-погода сегодня нормальная
-вес 0.046 · стабильность 2.2
-забудется через: уже забыт</title></circle><circle cx="152.7" cy="470.0" r="4.9" fill="#5b8def" class="node" data-id="191" data-kind="эпизод" data-text="привет снова" data-answer="привет снова" data-w="0.064" data-s="1.0" data-forget="1.4 сут" data-deg="5"><title>#191 · эпизод
+забудется через: уже забыт</title></circle><circle cx="30.0" cy="590.0" r="4.0" fill="#5b8def" class="node" data-id="191" data-kind="эпизод" data-text="привет снова" data-answer="привет снова" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#191 · эпизод
 привет снова
-вес 0.064 · стабильность 1.0
-забудется через: 1.4 сут</title></circle><circle cx="777.7" cy="590.0" r="5.2" fill="#5b8def" class="node" data-id="167" data-kind="эпизод" data-text="напомни, когда у меня рейс" data-answer="меня рейс ко-ко на-на-на" data-w="0.085" data-s="1.0" data-forget="3.1 сут" data-deg="0"><title>#167 · эпизод
-напомни, когда у меня рейс
-вес 0.085 · стабильность 1.0
-забудется через: 3.1 сут</title></circle><circle cx="870.0" cy="30.0" r="5.4" fill="#5b8def" class="node" data-id="174" data-kind="эпизод" data-text="а что там с аллергией" data-answer="что там э-э-я-ме я-си" data-w="0.101" data-s="1.0" data-forget="4.1 сут" data-deg="0"><title>#174 · эпизод
-а что там с аллергией
-вес 0.101 · стабильность 1.0
-забудется через: 4.1 сут</title></circle><circle cx="159.1" cy="590.0" r="5.5" fill="#5b8def" class="node" data-id="200" data-kind="эпизод" data-text="какие у меня планы на май" data-answer="какие у меня планы на май" data-w="0.104" data-s="1.0" data-forget="4.3 сут" data-deg="5"><title>#200 · эпизод
-какие у меня планы на май
-вес 0.104 · стабильность 1.0
-забудется через: 4.3 сут</title></circle><circle cx="328.3" cy="590.0" r="5.6" fill="#5b8def" class="node" data-id="184" data-kind="эпизод" data-text="погода опять та же" data-answer="погода опять та же" data-w="0.112" data-s="1.0" data-forget="4.7 сут" data-deg="5"><title>#184 · эпизод
-погода опять та же
-вес 0.112 · стабильность 1.0
-забудется через: 4.7 сут</title></circle><circle cx="306.0" cy="459.9" r="5.7" fill="#5b8def" class="node" data-id="69" data-kind="эпизод" data-text="у меня аллергия на пенициллин, это важно" data-answer="меня на аллергия лле-лле-лле-лле я-я-я" data-w="0.123" data-s="5.1" data-forget="26.5 сут" data-deg="5"><title>#69 · эпизод
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="764.8" cy="30.0" r="4.0" fill="#5b8def" class="node" data-id="69" data-kind="эпизод" data-text="у меня аллергия на пенициллин, это важно" data-answer="меня на аллергия кенд-кенд-спа зо-зо" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#69 · эпизод
 у меня аллергия на пенициллин, это важно
-вес 0.123 · стабильность 5.1
-забудется через: 26.5 сут</title></circle><circle cx="645.0" cy="30.0" r="8.9" fill="#5b8def" class="node" data-id="224" data-kind="эпизод" data-text="ладно, пока" data-answer="ладно, хе-пи-хе-хе кста-кста-че-не" data-w="0.351" data-s="1.0" data-forget="11.4 сут" data-deg="1"><title>#224 · эпизод
-ладно, пока
-вес 0.351 · стабильность 1.0
-забудется через: 11.4 сут</title></circle><circle cx="870.0" cy="156.5" r="9.7" fill="#5b8def" class="node" data-id="218" data-kind="эпизод" data-text="в Новосибирске зимой доходит до сорока" data-answer="новосибирске до ко-ко-по по-по" data-w="0.406" data-s="1.0" data-forget="12.2 сут" data-deg="1"><title>#218 · эпизод
-в Новосибирске зимой доходит до сорока
-вес 0.406 · стабильность 1.0
-забудется через: 12.2 сут</title></circle><circle cx="242.2" cy="590.0" r="10.8" fill="#5b8def" class="node" data-id="210" data-kind="эпизод" data-text="родители живут в Новосибирске" data-answer="Новосибирске но-но-вай-мбул ли-ли-ли-сли" data-w="0.487" data-s="1.0" data-forget="13.3 сут" data-deg="5"><title>#210 · эпизод
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="379.9" cy="590.0" r="4.0" fill="#5b8def" class="node" data-id="76" data-kind="эпизод" data-text="сестру зовут Мира" data-answer="зовут сестру шу-шу" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#76 · эпизод
+сестру зовут Мира
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="162.7" cy="30.0" r="4.0" fill="#5b8def" class="node" data-id="34" data-kind="эпизод" data-text="меня зовут Паша, я бэкенд-разработчик" data-answer="меня зна-зна па-па-па-па" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#34 · эпизод
+меня зовут Паша, я бэкенд-разработчик
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="870.0" cy="560.8" r="4.0" fill="#5b8def" class="node" data-id="50" data-kind="эпизод" data-text="работаю в финтехе, пишу на питоне" data-answer="ю-ю ми-ми-ми-ми" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#50 · эпизод
+работаю в финтехе, пишу на питоне
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="218.9" cy="590.0" r="4.0" fill="#5b8def" class="node" data-id="90" data-kind="эпизод" data-text="Мира разводит спаниелей" data-answer="мира пи-пи-пи-пи да-да-да-да" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#90 · эпизод
+Мира разводит спаниелей
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="66.0" cy="30.0" r="4.0" fill="#5b8def" class="node" data-id="112" data-kind="эпизод" data-text="лечу в Стамбул двадцатого мая" data-answer="лечу пе-пе-пе-пе па-па-па-па" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#112 · эпизод
+лечу в Стамбул двадцатого мая
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="300.1" cy="30.0" r="4.0" fill="#5b8def" class="node" data-id="148" data-kind="эпизод" data-text="кстати рейс перенесли на двадцать второе" data-answer="на га-кста при-при" data-w="0.000" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#148 · эпизод
+кстати рейс перенесли на двадцать второе
+вес 0.000 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="554.6" cy="590.0" r="4.0" fill="#5b8def" class="node" data-id="167" data-kind="эпизод" data-text="напомни, когда у меня рейс" data-answer="меня рейс кенд-кенд-ста-ок се-се" data-w="0.001" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#167 · эпизод
+напомни, когда у меня рейс
+вес 0.001 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="725.1" cy="590.0" r="4.0" fill="#5b8def" class="node" data-id="200" data-kind="эпизод" data-text="какие у меня планы на май" data-answer="меня на се-на-се-май чно-чно-чно-чно" data-w="0.001" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#200 · эпизод
+какие у меня планы на май
+вес 0.001 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="30.0" cy="527.5" r="4.0" fill="#5b8def" class="node" data-id="184" data-kind="эпизод" data-text="погода опять та же" data-answer="погода опять та же" data-w="0.002" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#184 · эпизод
+погода опять та же
+вес 0.002 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="90.7" cy="590.0" r="4.1" fill="#5b8def" class="node" data-id="210" data-kind="эпизод" data-text="родители живут в Новосибирске" data-answer="родители ми-мя-ок-ка кста-чу-кста-ок" data-w="0.007" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#210 · эпизод
 родители живут в Новосибирске
-вес 0.487 · стабильность 1.0
-забудется через: 13.3 сут</title></circle><circle cx="30.0" cy="30.0" r="17.3" fill="#c77dd6" class="node" data-id="1" data-kind="образ себя" data-text="Я — растущий цифровой разум (цифровой ребёнок). Я учусь у Юзера языку, концептам и правилам. У меня НЕТ внешних абсолютных энциклопедических" data-answer="Я — растущий цифровой разум (цифровой ребёнок). Я учусь у Юзера языку, концептам и правилам. У меня " data-w="0.950" data-s="1.0" data-forget="иммунен" data-deg="0"><title>#1 · образ себя
+вес 0.007 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="870.0" cy="590.0" r="4.1" fill="#5b8def" class="node" data-id="100" data-kind="эпизод" data-text="погода сегодня нормальная" data-answer="на-на-на-вай ю-ю-ю" data-w="0.007" data-s="2.2" data-forget="уже забыт" data-deg="0"><title>#100 · эпизод
+погода сегодня нормальная
+вес 0.007 · стабильность 2.2
+забудется через: уже забыт</title></circle><circle cx="30.0" cy="30.0" r="4.3" fill="#5b8def" class="node" data-id="243" data-kind="эпизод" data-text="просто зашёл" data-answer="просто зашёл" data-w="0.021" data-s="1.0" data-forget="уже забыт" data-deg="0"><title>#243 · эпизод
+просто зашёл
+вес 0.021 · стабильность 1.0
+забудется через: уже забыт</title></circle><circle cx="870.0" cy="30.0" r="4.4" fill="#5b8def" class="node" data-id="160" data-kind="эпизод" data-text="Мира ещё реставрирует пианино" data-answer="мира бэ-бэ-бэ-ю та-та-ня" data-w="0.027" data-s="2.2" data-forget="уже забыт" data-deg="1"><title>#160 · эпизод
+Мира ещё реставрирует пианино
+вес 0.027 · стабильность 2.2
+забудется через: уже забыт</title></circle><circle cx="870.0" cy="389.9" r="4.7" fill="#5b8def" class="node" data-id="131" data-kind="эпизод" data-text="я не ем мясо уже три года" data-answer="не шу-шу-шу не-не-не" data-w="0.049" data-s="2.2" data-forget="уже забыт" data-deg="2"><title>#131 · эпизод
+я не ем мясо уже три года
+вес 0.049 · стабильность 2.2
+забудется через: уже забыт</title></circle><circle cx="457.6" cy="30.0" r="4.7" fill="#5b8def" class="node" data-id="82" data-kind="эпизод" data-text="как дела" data-answer="как ок-ок-ок-ок" data-w="0.050" data-s="5.1" data-forget="уже забыт" data-deg="0"><title>#82 · эпизод
+как дела
+вес 0.050 · стабильность 5.1
+забудется через: уже забыт</title></circle><circle cx="618.6" cy="30.0" r="5.0" fill="#5b8def" class="node" data-id="174" data-kind="эпизод" data-text="а что там с аллергией" data-answer="что там по-по-чно-по да-да-да-да" data-w="0.074" data-s="5.1" data-forget="11.5 сут" data-deg="0"><title>#174 · эпизод
+а что там с аллергией
+вес 0.074 · стабильность 5.1
+забудется через: 11.5 сут</title></circle><circle cx="870.0" cy="149.8" r="5.0" fill="#5b8def" class="node" data-id="251" data-kind="эпизод" data-text="привет ещё раз" data-answer="привет ещё раз" data-w="0.074" data-s="1.0" data-forget="2.3 сут" data-deg="1"><title>#251 · эпизод
+привет ещё раз
+вес 0.074 · стабильность 1.0
+забудется через: 2.3 сут</title></circle><circle cx="870.0" cy="64.5" r="5.7" fill="#5b8def" class="node" data-id="218" data-kind="эпизод" data-text="в Новосибирске зимой доходит до сорока" data-answer="новосибирске до се-се-ны се-се-се" data-w="0.120" data-s="5.1" data-forget="25.8 сут" data-deg="0"><title>#218 · эпизод
+в Новосибирске зимой доходит до сорока
+вес 0.120 · стабильность 5.1
+забудется через: 25.8 сут</title></circle><circle cx="870.0" cy="295.2" r="8.4" fill="#5b8def" class="node" data-id="224" data-kind="эпизод" data-text="ладно, пока" data-answer="ладно, пока" data-w="0.312" data-s="40.0" data-forget="14.3 мес" data-deg="2"><title>#224 · эпизод
+ладно, пока
+вес 0.312 · стабильность 40.0
+забудется через: 14.3 мес</title></circle><circle cx="870.0" cy="476.7" r="9.3" fill="#5b8def" class="node" data-id="264" data-kind="эпизод" data-text="давно не виделись" data-answer="давно не виделись" data-w="0.380" data-s="1.0" data-forget="11.8 сут" data-deg="2"><title>#264 · эпизод
+давно не виделись
+вес 0.380 · стабильность 1.0
+забудется через: 11.8 сут</title></circle><circle cx="30.0" cy="131.6" r="17.3" fill="#c77dd6" class="node" data-id="1" data-kind="образ себя" data-text="Я — растущий цифровой разум (цифровой ребёнок). Я учусь у Юзера языку, концептам и правилам. У меня НЕТ внешних абсолютных энциклопедических" data-answer="Я — растущий цифровой разум (цифровой ребёнок). Я учусь у Юзера языку, концептам и правилам. У меня " data-w="0.950" data-s="1.0" data-forget="иммунен" data-deg="0"><title>#1 · образ себя
 Я — растущий цифровой разум (цифровой ребёнок). Я учусь у Юзера языку,
 вес 0.950 · стабильность 1.0
-забудется через: иммунен</title></circle><circle cx="870.0" cy="359.9" r="17.3" fill="#d68f5a" class="node" data-id="2" data-kind="образ учителя" data-text="Мой наставник и учитель (Юзер). Он занимается со мной, учит меня программированию, созданию игр и правильному общению." data-answer="Мой наставник и учитель (Юзер). Он занимается со мной, учит меня программированию, созданию игр и пр" data-w="0.950" data-s="1.0" data-forget="иммунен" data-deg="0"><title>#2 · образ учителя
+забудется через: иммунен</title></circle><circle cx="30.0" cy="267.3" r="17.3" fill="#d68f5a" class="node" data-id="2" data-kind="образ учителя" data-text="Мой наставник и учитель (Юзер). Он занимается со мной, учит меня программированию, созданию игр и правильному общению." data-answer="Мой наставник и учитель (Юзер). Он занимается со мной, учит меня программированию, созданию игр и пр" data-w="0.950" data-s="1.0" data-forget="иммунен" data-deg="0"><title>#2 · образ учителя
 Мой наставник и учитель (Юзер). Он занимается со мной, учит меня прогр
 вес 0.950 · стабильность 1.0
 забудется через: иммунен</title></circle></svg></div>
-  <div class="chips"><span class="chip"><i style="background:#b3a55c"></i>слог · 118</span><span class="chip"><i style="background:#7f9f6a"></i>слово · 78</span><span class="chip"><i style="background:#5b8def"></i>эпизод · 20</span><span class="chip"><i style="background:#8a8f98"></i>episode_summary · 4</span><span class="chip"><i style="background:#c77dd6"></i>образ себя · 1</span><span class="chip"><i style="background:#d68f5a"></i>образ учителя · 1</span></div>
+  <div class="chips"><span class="chip"><i style="background:#b3a55c"></i>слог · 141</span><span class="chip"><i style="background:#7f9f6a"></i>слово · 97</span><span class="chip"><i style="background:#5b8def"></i>эпизод · 23</span><span class="chip"><i style="background:#8a8f98"></i>episode_summary · 4</span><span class="chip"><i style="background:#c77dd6"></i>образ себя · 1</span><span class="chip"><i style="background:#d68f5a"></i>образ учителя · 1</span></div>
   <p class="sub" style="margin-top:10px">
     Размер узла — вес (сила памяти), толщина связи — вес ребра.
     Наведите курсор, чтобы увидеть стабильность и прогноз забывания.
@@ -228,13 +265,13 @@ code { font-size:12px; }
   <div class="scroll"><table>
     <tr><th>#</th><th>Сказал пользователь</th><th>Ответил бот</th>
         <th class="num">Вес</th><th class="num">Стабильн.</th><th class="num">Забудется через</th></tr>
-    <tr><td class='num'>210</td><td>родители живут в Новосибирске</td><td>Новосибирске но-но-вай-мбул ли-ли-ли-сли</td><td class='num'>0.487</td><td class='num'>1.0</td><td class='num'>13.3 сут</td></tr><tr><td class='num'>218</td><td>в Новосибирске зимой доходит до сорока</td><td>новосибирске до ко-ко-по по-по</td><td class='num'>0.406</td><td class='num'>1.0</td><td class='num'>12.2 сут</td></tr><tr><td class='num'>224</td><td>ладно, пока</td><td>ладно, хе-пи-хе-хе кста-кста-че-не</td><td class='num'>0.351</td><td class='num'>1.0</td><td class='num'>11.4 сут</td></tr><tr><td class='num'>69</td><td>у меня аллергия на пенициллин, это важно</td><td>меня на аллергия лле-лле-лле-лле я-я-я</td><td class='num'>0.123</td><td class='num'>5.1</td><td class='num'>26.5 сут</td></tr><tr><td class='num'>184</td><td>погода опять та же</td><td>погода опять та же</td><td class='num'>0.112</td><td class='num'>1.0</td><td class='num'>4.7 сут</td></tr><tr><td class='num'>200</td><td>какие у меня планы на май</td><td>какие у меня планы на май</td><td class='num'>0.104</td><td class='num'>1.0</td><td class='num'>4.3 сут</td></tr><tr><td class='num'>174</td><td>а что там с аллергией</td><td>что там э-э-я-ме я-си</td><td class='num'>0.101</td><td class='num'>1.0</td><td class='num'>4.1 сут</td></tr><tr><td class='num'>167</td><td>напомни, когда у меня рейс</td><td>меня рейс ко-ко на-на-на</td><td class='num'>0.085</td><td class='num'>1.0</td><td class='num'>3.1 сут</td></tr><tr><td class='num'>191</td><td>привет снова</td><td>привет снова</td><td class='num'>0.064</td><td class='num'>1.0</td><td class='num'>1.4 сут</td></tr><tr><td class='num'>100</td><td>погода сегодня нормальная</td><td>погода э-э ци-ци</td><td class='num'>0.046</td><td class='num'>2.2</td><td class='num'>уже забыт</td></tr><tr><td class='num'>160</td><td>Мира ещё реставрирует пианино</td><td>мира ещё а-а-ра-а при-при-при</td><td class='num'>0.030</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>131</td><td>я не ем мясо уже три года</td><td>лей-лей я-я-тчик</td><td class='num'>0.029</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>148</td><td>кстати рейс перенесли на двадцать второе</td><td>на не-не-не бо-бо-жно</td><td class='num'>0.029</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>112</td><td>лечу в Стамбул двадцатого мая</td><td>лечу ле-ле-бэ-ле бо-бо-бо</td><td class='num'>0.028</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>90</td><td>Мира разводит спаниелей</td><td>мира разводит ра-ра-ра-тчик</td><td class='num'>0.007</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>50</td><td>работаю в финтехе, пишу на питоне</td><td>вут-вут-вут нте-нте-нте</td><td class='num'>0.007</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>34</td><td>меня зовут Паша, я бэкенд-разработчик</td><td>меня бэ-бэ вет-вет-вет-вет</td><td class='num'>0.007</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>76</td><td>сестру зовут Мира</td><td>зовут сестру я-я</td><td class='num'>0.007</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>82</td><td>как дела</td><td>нте-нте-нте зна-ра-рги-зна</td><td class='num'>0.005</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>15</td><td>привет, давай знакомиться</td><td>да-да-да ко-ко</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr>
+    <tr><td class='num'>264</td><td>давно не виделись</td><td>давно не виделись</td><td class='num'>0.380</td><td class='num'>1.0</td><td class='num'>11.8 сут</td></tr><tr><td class='num'>224</td><td>ладно, пока</td><td>ладно, пока</td><td class='num'>0.312</td><td class='num'>40.0</td><td class='num'>14.3 мес</td></tr><tr><td class='num'>218</td><td>в Новосибирске зимой доходит до сорока</td><td>новосибирске до се-се-ны се-се-се</td><td class='num'>0.120</td><td class='num'>5.1</td><td class='num'>25.8 сут</td></tr><tr><td class='num'>251</td><td>привет ещё раз</td><td>привет ещё раз</td><td class='num'>0.074</td><td class='num'>1.0</td><td class='num'>2.3 сут</td></tr><tr><td class='num'>174</td><td>а что там с аллергией</td><td>что там по-по-чно-по да-да-да-да</td><td class='num'>0.074</td><td class='num'>5.1</td><td class='num'>11.5 сут</td></tr><tr><td class='num'>82</td><td>как дела</td><td>как ок-ок-ок-ок</td><td class='num'>0.050</td><td class='num'>5.1</td><td class='num'>уже забыт</td></tr><tr><td class='num'>131</td><td>я не ем мясо уже три года</td><td>не шу-шу-шу не-не-не</td><td class='num'>0.049</td><td class='num'>2.2</td><td class='num'>уже забыт</td></tr><tr><td class='num'>160</td><td>Мира ещё реставрирует пианино</td><td>мира бэ-бэ-бэ-ю та-та-ня</td><td class='num'>0.027</td><td class='num'>2.2</td><td class='num'>уже забыт</td></tr><tr><td class='num'>243</td><td>просто зашёл</td><td>просто зашёл</td><td class='num'>0.021</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>100</td><td>погода сегодня нормальная</td><td>на-на-на-вай ю-ю-ю</td><td class='num'>0.007</td><td class='num'>2.2</td><td class='num'>уже забыт</td></tr><tr><td class='num'>210</td><td>родители живут в Новосибирске</td><td>родители ми-мя-ок-ка кста-чу-кста-ок</td><td class='num'>0.007</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>184</td><td>погода опять та же</td><td>погода опять та же</td><td class='num'>0.002</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>200</td><td>какие у меня планы на май</td><td>меня на се-на-се-май чно-чно-чно-чно</td><td class='num'>0.001</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>167</td><td>напомни, когда у меня рейс</td><td>меня рейс кенд-кенд-ста-ок се-се</td><td class='num'>0.001</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>148</td><td>кстати рейс перенесли на двадцать второе</td><td>на га-кста при-при</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>112</td><td>лечу в Стамбул двадцатого мая</td><td>лечу пе-пе-пе-пе па-па-па-па</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>90</td><td>Мира разводит спаниелей</td><td>мира пи-пи-пи-пи да-да-да-да</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>50</td><td>работаю в финтехе, пишу на питоне</td><td>ю-ю ми-ми-ми-ми</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>34</td><td>меня зовут Паша, я бэкенд-разработчик</td><td>меня зна-зна па-па-па-па</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>76</td><td>сестру зовут Мира</td><td>зовут сестру шу-шу</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>69</td><td>у меня аллергия на пенициллин, это важно</td><td>меня на аллергия кенд-кенд-спа зо-зо</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>15</td><td>привет, давай знакомиться</td><td>при-при-при ться-ться-ться-ться</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr><tr><td class='num'>191</td><td>привет снова</td><td>привет снова</td><td class='num'>0.000</td><td class='num'>1.0</td><td class='num'>уже забыт</td></tr>
   </table></div>
 
   <h2>Словарь</h2>
   <div class="scroll"><table>
     <tr><th>Слово</th><th class="num">Вес</th><th class="num">Забудется через</th><th>Освоено</th></tr>
-    <tr><td>меня</td><td class='num'>0.359</td><td class='num'>39.4 мес</td><td>да</td></tr><tr><td>на</td><td class='num'>0.332</td><td class='num'>37.9 мес</td><td>да</td></tr><tr><td>рейс</td><td class='num'>0.283</td><td class='num'>34.7 мес</td><td>да</td></tr><tr><td>что</td><td class='num'>0.257</td><td class='num'>32.8 мес</td><td>да</td></tr><tr><td>спасибо</td><td class='num'>0.222</td><td class='num'>29.8 мес</td><td>да</td></tr><tr><td>привет</td><td class='num'>0.222</td><td class='num'>29.8 мес</td><td>да</td></tr><tr><td>мира</td><td class='num'>0.221</td><td class='num'>29.8 мес</td><td>да</td></tr><tr><td>там</td><td class='num'>0.220</td><td class='num'>29.6 мес</td><td>да</td></tr><tr><td>лечу</td><td class='num'>0.195</td><td class='num'>27.3 мес</td><td>да</td></tr><tr><td>новосибирске</td><td class='num'>0.190</td><td class='num'>26.7 мес</td><td>да</td></tr><tr><td>до</td><td class='num'>0.188</td><td class='num'>26.5 мес</td><td>да</td></tr><tr><td>ничего</td><td class='num'>0.186</td><td class='num'>26.3 мес</td><td>да</td></tr><tr><td>нового</td><td class='num'>0.185</td><td class='num'>26.1 мес</td><td>да</td></tr><tr><td>погода</td><td class='num'>0.184</td><td class='num'>26.0 мес</td><td>да</td></tr><tr><td>зовут</td><td class='num'>0.182</td><td class='num'>25.9 мес</td><td>да</td></tr><tr><td>ладно</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>пока</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>себе</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>зимой</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>доходит</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>сорока</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>понятно</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>родители</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr><tr><td>живут</td><td class='num'>0.150</td><td class='num'>22.0 мес</td><td>ещё нет</td></tr>
+    <tr><td>меня</td><td class='num'>0.416</td><td class='num'>42.4 мес</td><td>да</td></tr><tr><td>на</td><td class='num'>0.390</td><td class='num'>41.1 мес</td><td>да</td></tr><tr><td>что</td><td class='num'>0.326</td><td class='num'>37.5 мес</td><td>да</td></tr><tr><td>привет</td><td class='num'>0.291</td><td class='num'>35.2 мес</td><td>да</td></tr><tr><td>рейс</td><td class='num'>0.273</td><td class='num'>34.0 мес</td><td>да</td></tr><tr><td>до</td><td class='num'>0.262</td><td class='num'>33.1 мес</td><td>да</td></tr><tr><td>ничего</td><td class='num'>0.256</td><td class='num'>32.6 мес</td><td>да</td></tr><tr><td>спасибо</td><td class='num'>0.252</td><td class='num'>32.4 мес</td><td>да</td></tr><tr><td>ну</td><td class='num'>0.225</td><td class='num'>30.1 мес</td><td>да</td></tr><tr><td>ладно</td><td class='num'>0.222</td><td class='num'>29.8 мес</td><td>да</td></tr><tr><td>не</td><td class='num'>0.221</td><td class='num'>29.7 мес</td><td>да</td></tr><tr><td>хорошо</td><td class='num'>0.221</td><td class='num'>29.7 мес</td><td>да</td></tr><tr><td>как</td><td class='num'>0.216</td><td class='num'>29.3 мес</td><td>да</td></tr><tr><td>там</td><td class='num'>0.212</td><td class='num'>28.9 мес</td><td>да</td></tr><tr><td>мира</td><td class='num'>0.212</td><td class='num'>28.9 мес</td><td>да</td></tr><tr><td>лечу</td><td class='num'>0.189</td><td class='num'>26.6 мес</td><td>да</td></tr><tr><td>всё</td><td class='num'>0.188</td><td class='num'>26.5 мес</td><td>да</td></tr><tr><td>да</td><td class='num'>0.185</td><td class='num'>26.2 мес</td><td>да</td></tr><tr><td>нормально</td><td class='num'>0.183</td><td class='num'>26.0 мес</td><td>да</td></tr><tr><td>пока</td><td class='num'>0.183</td><td class='num'>26.0 мес</td><td>да</td></tr><tr><td>понятно</td><td class='num'>0.183</td><td class='num'>26.0 мес</td><td>да</td></tr><tr><td>ясно</td><td class='num'>0.182</td><td class='num'>25.9 мес</td><td>да</td></tr><tr><td>новосибирске</td><td class='num'>0.182</td><td class='num'>25.9 мес</td><td>да</td></tr><tr><td>связи</td><td class='num'>0.182</td><td class='num'>25.8 мес</td><td>да</td></tr>
   </table></div>
 
 <script>

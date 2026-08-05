@@ -1,0 +1,396 @@
+{
+ "total": 65,
+ "written": 23,
+ "decisions": [
+  {
+   "text": "привет, давай знакомиться",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.077
+  },
+  {
+   "text": "меня зовут Паша, я бэкенд-разработчик",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.067
+  },
+  {
+   "text": "работаю в финтехе, пишу на питоне",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.048
+  },
+  {
+   "text": "спасибо",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.07
+  },
+  {
+   "text": "у меня аллергия на пенициллин, это важно",
+   "written": true,
+   "surprise": 0.833,
+   "emotion": 0.05
+  },
+  {
+   "text": "ок",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.02
+  },
+  {
+   "text": "сестру зовут Мира",
+   "written": true,
+   "surprise": 0.833,
+   "emotion": 0.07
+  },
+  {
+   "text": "как дела",
+   "written": true,
+   "surprise": 0.667,
+   "emotion": 0.035
+  },
+  {
+   "text": "Мира разводит спаниелей",
+   "written": true,
+   "surprise": 0.833,
+   "emotion": 0.084
+  },
+  {
+   "text": "погода сегодня нормальная",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.077
+  },
+  {
+   "text": "лечу в Стамбул двадцатого мая",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.062
+  },
+  {
+   "text": "ага",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.03
+  },
+  {
+   "text": "ничего нового",
+   "written": false,
+   "surprise": 0.667,
+   "emotion": 0.06
+  },
+  {
+   "text": "я не ем мясо уже три года",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.027
+  },
+  {
+   "text": "понял",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.05
+  },
+  {
+   "text": "привет",
+   "written": false,
+   "surprise": 0.06,
+   "emotion": 0.06
+  },
+  {
+   "text": "кстати рейс перенесли на двадцать второе",
+   "written": true,
+   "surprise": 0.9,
+   "emotion": 0.058
+  },
+  {
+   "text": "спасибо большое",
+   "written": false,
+   "surprise": 0.502,
+   "emotion": 0.07
+  },
+  {
+   "text": "что нового",
+   "written": false,
+   "surprise": 0.5,
+   "emotion": 0.045
+  },
+  {
+   "text": "Мира ещё реставрирует пианино",
+   "written": true,
+   "surprise": 0.85,
+   "emotion": 0.077
+  },
+  {
+   "text": "ясно",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.04
+  },
+  {
+   "text": "напомни, когда у меня рейс",
+   "written": true,
+   "surprise": 0.727,
+   "emotion": 0.046
+  },
+  {
+   "text": "точно",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.05
+  },
+  {
+   "text": "а что там с аллергией",
+   "written": true,
+   "surprise": 0.835,
+   "emotion": 0.034
+  },
+  {
+   "text": "хорошо",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.06
+  },
+  {
+   "text": "погода опять та же",
+   "written": true,
+   "surprise": 0.878,
+   "emotion": 0.038
+  },
+  {
+   "text": "до связи",
+   "written": false,
+   "surprise": 0.667,
+   "emotion": 0.035
+  },
+  {
+   "text": "привет снова",
+   "written": true,
+   "surprise": 0.467,
+   "emotion": 0.055
+  },
+  {
+   "text": "какие у меня планы на май",
+   "written": true,
+   "surprise": 0.76,
+   "emotion": 0.033
+  },
+  {
+   "text": "спасибо",
+   "written": false,
+   "surprise": 0.0,
+   "emotion": 0.07
+  },
+  {
+   "text": "родители живут в Новосибирске",
+   "written": true,
+   "surprise": 1.0,
+   "emotion": 0.077
+  },
+  {
+   "text": "понятно",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.07
+  },
+  {
+   "text": "в Новосибирске зимой доходит до сорока",
+   "written": true,
+   "surprise": 0.801,
+   "emotion": 0.064
+  },
+  {
+   "text": "ничего себе",
+   "written": false,
+   "surprise": 0.505,
+   "emotion": 0.05
+  },
+  {
+   "text": "ладно, пока",
+   "written": true,
+   "surprise": 0.667,
+   "emotion": 0.054
+  },
+  {
+   "text": "привет",
+   "written": false,
+   "surprise": 0.0,
+   "emotion": 0.06
+  },
+  {
+   "text": "как дела",
+   "written": false,
+   "surprise": 0.347,
+   "emotion": 0.035
+  },
+  {
+   "text": "нормально",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.09
+  },
+  {
+   "text": "что делаешь",
+   "written": false,
+   "surprise": 0.467,
+   "emotion": 0.05
+  },
+  {
+   "text": "ничего особенного",
+   "written": false,
+   "surprise": 0.467,
+   "emotion": 0.08
+  },
+  {
+   "text": "ясно",
+   "written": false,
+   "surprise": 0.06,
+   "emotion": 0.04
+  },
+  {
+   "text": "ага",
+   "written": false,
+   "surprise": 0.067,
+   "emotion": 0.03
+  },
+  {
+   "text": "ну ладно",
+   "written": false,
+   "surprise": 0.502,
+   "emotion": 0.035
+  },
+  {
+   "text": "слушай",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.06
+  },
+  {
+   "text": "да ничего",
+   "written": false,
+   "surprise": 0.467,
+   "emotion": 0.04
+  },
+  {
+   "text": "просто зашёл",
+   "written": true,
+   "surprise": 0.667,
+   "emotion": 0.055
+  },
+  {
+   "text": "окей",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.04
+  },
+  {
+   "text": "хорошо",
+   "written": false,
+   "surprise": 0.063,
+   "emotion": 0.06
+  },
+  {
+   "text": "спасибо",
+   "written": false,
+   "surprise": 0.0,
+   "emotion": 0.07
+  },
+  {
+   "text": "не за что",
+   "written": false,
+   "surprise": 0.64,
+   "emotion": 0.023
+  },
+  {
+   "text": "до завтра",
+   "written": false,
+   "surprise": 0.467,
+   "emotion": 0.04
+  },
+  {
+   "text": "привет ещё раз",
+   "written": true,
+   "surprise": 0.642,
+   "emotion": 0.04
+  },
+  {
+   "text": "как сам",
+   "written": false,
+   "surprise": 0.468,
+   "emotion": 0.03
+  },
+  {
+   "text": "нормально всё",
+   "written": false,
+   "surprise": 0.504,
+   "emotion": 0.06
+  },
+  {
+   "text": "понятно",
+   "written": false,
+   "surprise": 0.063,
+   "emotion": 0.07
+  },
+  {
+   "text": "ну да",
+   "written": false,
+   "surprise": 0.338,
+   "emotion": 0.02
+  },
+  {
+   "text": "точно",
+   "written": false,
+   "surprise": 0.067,
+   "emotion": 0.05
+  },
+  {
+   "text": "ладно",
+   "written": false,
+   "surprise": 0.0,
+   "emotion": 0.05
+  },
+  {
+   "text": "пока",
+   "written": false,
+   "surprise": 0.063,
+   "emotion": 0.04
+  },
+  {
+   "text": "здравствуй",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.1
+  },
+  {
+   "text": "давно не виделись",
+   "written": true,
+   "surprise": 0.8,
+   "emotion": 0.05
+  },
+  {
+   "text": "и правда",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.035
+  },
+  {
+   "text": "ну хорошо",
+   "written": false,
+   "surprise": 0.267,
+   "emotion": 0.04
+  },
+  {
+   "text": "договорились",
+   "written": false,
+   "surprise": 0.333,
+   "emotion": 0.1
+  },
+  {
+   "text": "всё, до связи",
+   "written": false,
+   "surprise": 0.478,
+   "emotion": 0.041
+  }
+ ]
+}

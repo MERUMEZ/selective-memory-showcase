@@ -25,6 +25,7 @@
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -72,6 +73,41 @@ CONVERSATION = [
     "в Новосибирске зимой доходит до сорока",
     "ничего себе",
     "ладно, пока",
+    # Второй заход: трёпа больше, и это не подгонка под красивое число.
+    # В настоящем разговоре бытовых реплик кратно больше содержательных —
+    # заявленные 23% записи взяты с полного набора LongMemEval именно на
+    # такой смеси. Короткий вымышленный диалог из одних фактов показывал
+    # 57% и врал в свою пользу: организму было ново почти всё.
+    "привет",
+    "как дела",
+    "нормально",
+    "что делаешь",
+    "ничего особенного",
+    "ясно",
+    "ага",
+    "ну ладно",
+    "слушай",
+    "да ничего",
+    "просто зашёл",
+    "окей",
+    "хорошо",
+    "спасибо",
+    "не за что",
+    "до завтра",
+    "привет ещё раз",
+    "как сам",
+    "нормально всё",
+    "понятно",
+    "ну да",
+    "точно",
+    "ладно",
+    "пока",
+    "здравствуй",
+    "давно не виделись",
+    "и правда",
+    "ну хорошо",
+    "договорились",
+    "всё, до связи",
 ]
 
 
@@ -95,13 +131,34 @@ def main() -> None:
     wall = ManualWallClock(start=1_700_000_000.0, seconds_per_call=0.0)
     session = BrainSession(db_path=str(path), wall_clock=wall)
 
+    # РЕШЕНИЯ ВОРОТ СОБИРАЮТСЯ ЗДЕСЬ, потому что в базе их нет: отсеянная
+    # реплика не оставляет следа — в том и смысл ворот. А показать надо
+    # именно их: доля записи и есть главное, что делает библиотека, и без
+    # этого блока страница рассказывает про витрину, а не про память.
+    decisions = []
     for index, message in enumerate(CONVERSATION, start=1):
-        session.process_message(message)
+        result = session.process_message(message)
+        decisions.append({
+            "text": message,
+            "written": bool(result.debug.get("memory_written")),
+            "surprise": round(float(result.debug.get("perplexity") or 0.0), 3),
+            "emotion": round(float(result.debug.get("emotion_score") or 0.0), 3),
+        })
         # Полчаса между репликами, сутки между «днями» по десять реплик.
         wall.advance(1800.0 if index % 10 else 86400.0)
 
+    written = sum(1 for d in decisions if d["written"])
+    gate_path = path.with_name("demo_gate.json")
+    gate_path.write_text(json.dumps({
+        "total": len(decisions),
+        "written": written,
+        "decisions": decisions,
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+
     print(f"  разговор из {len(CONVERSATION)} реплик прогнан")
+    print(f"  записано {written}, отсеяно {len(decisions) - written}")
     print(f"  мозг: {path}")
+    print(f"  решения ворот: {gate_path}")
 
 
 if __name__ == "__main__":

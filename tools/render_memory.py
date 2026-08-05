@@ -481,7 +481,66 @@ def render_mood(snap: Snapshot) -> str:
 </div>"""
 
 
-def render_html(snap: Snapshot, include_lexical: bool, note: str = "") -> str:
+def render_gate(gate: Optional[dict]) -> str:
+    """Что сделала ПАМЯТЬ: доля записи и примеры решений в обе стороны."""
+    if not gate or not gate.get("decisions"):
+        return ""
+    total = gate["total"]
+    written = gate["written"]
+    kept = [d for d in gate["decisions"] if d["written"]]
+    dropped = [d for d in gate["decisions"] if not d["written"]]
+    # ПОКАЗЫВАЕМ ГРАНИЦУ, А НЕ КРАЙНОСТИ. Отсортировав записанное по
+    # убыванию удивления, мы получали первые пять реплик разговора — там
+    # у новорождённого организма всё равно 1.00, и решение ворот не видно.
+    # Интересна полоса вокруг порога: что едва прошло и что едва не
+    # прошло. Заодно это честнее — не прячет «погоду», которую ворота
+    # пропустили, пока она была в новинку.
+    kept.sort(key=lambda d: d["surprise"])
+    dropped.sort(key=lambda d: -d["surprise"])
+
+    def column(title, items, cls):
+        # ЗНАЧИМОСТЬ ПОКАЗАНА РЯДОМ С УДИВЛЕНИЕМ, иначе граница выглядит
+        # произволом: две реплики с одним удивлением уходят в разные
+        # стороны. Решает не новизна сама по себе, а произведение —
+        # значимость УМНОЖАЕТ пластичность, которую новизна открыла.
+        rows = "".join(
+            f'<tr><td>{escape(d["text"])}</td>'
+            f'<td class="num">{d["surprise"]:.2f}</td>'
+            f'<td class="num">{d.get("emotion", 0.0):.2f}</td></tr>'
+            for d in items[:5]
+        )
+        return (f'<div class="gate-col"><h3 class="{cls}">{title}</h3>'
+                f'<table><tr><th>реплика</th><th class="num">новизна</th>'
+                f'<th class="num">значимость</th></tr>'
+                f'{rows}</table></div>')
+
+    return f"""
+  <h2>Что сделала память</h2>
+  <p class="sub">Решение принимается в момент события, а не сжатием потом.
+  Отсеянная реплика следа не оставляет — поэтому эти решения записаны при
+  сборке снимка, а не восстановлены из базы.</p>
+  <div class="cards">
+    <div class="card"><div class="k">Показано реплик</div><div class="v">{total}</div></div>
+    <div class="card"><div class="k">Записано</div><div class="v">{written}</div></div>
+    <div class="card"><div class="k">Доля записи</div><div class="v">{written / max(1, total):.0%}</div></div>
+  </div>
+  <p class="sub">Ниже — полоса вокруг порога: не крайние случаи, а те, где
+  решение было близким. Одна и та же новизна уходит в разные стороны, и это
+  не сбой: порог НЕ ПОСТОЯНЕН — он поднимается при перегрузке, то есть
+  уставший организм пишет меньше. Плотность считается произведением, а не
+  суммой: значимость умножает пластичность, которую новизна уже открыла.</p>
+  <div class="gate">
+    {column("Едва прошло", kept, "keep")}
+    {column("Едва не прошло", dropped, "drop")}
+  </div>
+  <p class="sub">На полном наборе LongMemEval (500 вопросов, 246&nbsp;750
+  реплик) библиотека записывает <b>23.2%</b> и находит нужное с
+  <b>R@1&nbsp;67.0%</b>, <b>R@10&nbsp;81.0%</b>.</p>
+"""
+
+
+def render_html(snap: Snapshot, include_lexical: bool, note: str = "",
+                gate: Optional[dict] = None) -> str:
     visible_types = MEMORY_TYPES + (LEXICAL_TYPES if include_lexical else ())
     visible = [
         n for n in snap.nodes
@@ -540,6 +599,7 @@ def render_html(snap: Snapshot, include_lexical: bool, note: str = "") -> str:
         for n in top_words
     ) or "<tr><td colspan='4' class='empty'>Словарь пуст</td></tr>"
 
+    gate_block = render_gate(gate)
     note_block = "" if not note else (
         '<p style="margin:0 0 18px;padding:10px 14px;border-left:3px solid #c99;'
         'background:#fff8f8;color:#633;font-size:14px">' + escape(note) + "</p>"
@@ -649,12 +709,18 @@ code {{ font-size:12px; }}
 #tip b {{ color: #111; }}
 #tip .meta {{ color: #6a635a; font-size: 13px; }}
 #tip .pin {{ color: #b4553a; font-size: 12px; }}
+.gate {{ display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 8px; }}
+.gate-col {{ flex: 1 1 320px; min-width: 280px; }}
+.gate-col h3 {{ margin: 0 0 6px; font-size: 14px; }}
+.gate-col h3.keep {{ color: #3d7a4d; }}
+.gate-col h3.drop {{ color: #a2564a; }}
 </style>
 
 <div class="wrap">
   <h1>Память мозга</h1>
   <p class="sub">{escape(snap.db_path)} · снимок {generated}</p>
   {note_block}
+  {gate_block}
 
   {stability_note}
 
@@ -816,6 +882,14 @@ def main() -> None:
     parser.add_argument("db_path", help="путь к brain.db")
     parser.add_argument("-o", "--output", help="куда записать HTML (по умолчанию рядом с БД)")
     parser.add_argument(
+        "--gate",
+        help="JSON с решениями ворот (tools/make_demo_brain.py). Без него "
+             "страница рассказывает про витрину — настроение, стадию речи, "
+             "словарь, — а главное, что делает библиотека (доля записи и "
+             "что именно отсеяно), не видно вовсе: отсеянная реплика следа "
+             "в базе не оставляет",
+    )
+    parser.add_argument(
         "--note",
         help="строка-предупреждение над снимком. Нужна публичной странице: "
              "открывший её обязан сразу понимать, что разговор вымышленный, "
@@ -828,7 +902,10 @@ def main() -> None:
     args = parser.parse_args()
 
     snap = load_snapshot(args.db_path)
-    html = render_html(snap, include_lexical=args.include_lexical, note=args.note or "")
+    gate_data = None
+    if args.gate:
+        gate_data = json.loads(Path(args.gate).read_text(encoding="utf-8"))
+    html = render_html(snap, include_lexical=args.include_lexical, note=args.note or "", gate=gate_data)
 
     out = Path(args.output) if args.output else Path(args.db_path).with_suffix(".memory.html")
     out.write_text(html, encoding="utf-8")
