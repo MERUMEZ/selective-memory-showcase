@@ -45,7 +45,7 @@ from services.llm import generate_llm_response
 from storage.utils.logger import get_logger
 
 if TYPE_CHECKING:
-    from selectivemem.working_memory import WorkingMemory
+    from selectivemem.prefrontal import WorkingMemory
     from core.instincts import InstinctSystem
     from core.mood import Mood
 

@@ -33,7 +33,7 @@ from selectivemem.database import Database
 from selectivemem.settings import MemorySettings
 from selectivemem import embeddings
 from core.sleep_cycle import SleepCycle
-from selectivemem.working_memory import WorkingMemory
+from selectivemem.prefrontal import WorkingMemory
 from storage.utils.logger import get_logger
 
 logger = get_logger(__name__)

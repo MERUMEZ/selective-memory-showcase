@@ -41,7 +41,7 @@ from selectivemem.reinforcement import (
     ReinforcementLoop,
     RetrospectiveCorrectionResult,
 )
-from selectivemem.working_memory import WorkingMemory
+from selectivemem.prefrontal import WorkingMemory
 from services.llm import generate_llm_response
 from storage.utils.logger import get_logger
 

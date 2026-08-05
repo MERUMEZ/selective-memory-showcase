@@ -317,7 +317,7 @@ EMBEDDING_MODEL_PATH = _get_str(
 
 # Порог итоговой комбинированной оценки схожести (0.0..1.0), при которой
 # найденный узел памяти считается MEMORY HIT и подмешивается в контекст Cortex.
-MEMORY_SEARCH_THRESHOLD = _get_float("MEMORY_SEARCH_THRESHOLD", 0.3)
+MEMORY_SEARCH_THRESHOLD = _get_float("MEMORY_SEARCH_THRESHOLD", 0.20)
 
 # Вес компонента "пересечение ключевых слов" в итоговой оценке схожести
 MEMORY_KEYWORD_WEIGHT = _get_float("MEMORY_KEYWORD_WEIGHT", 0.3)

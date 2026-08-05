@@ -8,7 +8,8 @@
 Тот, кому интересно посмотреть на память в работе, приходит сюда.
 
 ```bash
-pip install selective-memory     # сама память
+# Сама память. На PyPI пакет ещё не выложен, поэтому ставится с GitHub:
+pip install "git+https://github.com/MERUMEZ/selective-memory.git"
 pip install -r requirements.txt  # то, что нужно витрине сверх неё
 ```
 
