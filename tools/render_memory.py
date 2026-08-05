@@ -427,7 +427,7 @@ def render_mood(snap: Snapshot) -> str:
 </div>"""
 
 
-def render_html(snap: Snapshot, include_lexical: bool) -> str:
+def render_html(snap: Snapshot, include_lexical: bool, note: str = "") -> str:
     visible_types = MEMORY_TYPES + (LEXICAL_TYPES if include_lexical else ())
     visible = [
         n for n in snap.nodes
@@ -485,6 +485,10 @@ def render_html(snap: Snapshot, include_lexical: bool) -> str:
         for n in top_words
     ) or "<tr><td colspan='4' class='empty'>Словарь пуст</td></tr>"
 
+    note_block = "" if not note else (
+        '<p style="margin:0 0 18px;padding:10px 14px;border-left:3px solid #c99;'
+        'background:#fff8f8;color:#633;font-size:14px">' + escape(note) + "</p>"
+    )
     stability_note = "" if snap.has_stability else (
         '<p class="warn">В этой БД ещё нет колонки <code>stability</code> — '
         'снимок сделан до миграции. Стабильность показана как 1.0, '
@@ -572,6 +576,7 @@ code {{ font-size:12px; }}
 <div class="wrap">
   <h1>Память мозга</h1>
   <p class="sub">{escape(snap.db_path)} · снимок {generated}</p>
+  {note_block}
 
   {stability_note}
 
@@ -626,13 +631,19 @@ def main() -> None:
     parser.add_argument("db_path", help="путь к brain.db")
     parser.add_argument("-o", "--output", help="куда записать HTML (по умолчанию рядом с БД)")
     parser.add_argument(
+        "--note",
+        help="строка-предупреждение над снимком. Нужна публичной странице: "
+             "открывший её обязан сразу понимать, что разговор вымышленный, "
+             "а не подсмотренный у живого человека",
+    )
+    parser.add_argument(
         "--all", action="store_true", dest="include_lexical",
         help="показать на графе и лексические узлы (слова/слоги), а не только воспоминания",
     )
     args = parser.parse_args()
 
     snap = load_snapshot(args.db_path)
-    html = render_html(snap, include_lexical=args.include_lexical)
+    html = render_html(snap, include_lexical=args.include_lexical, note=args.note or "")
 
     out = Path(args.output) if args.output else Path(args.db_path).with_suffix(".memory.html")
     out.write_text(html, encoding="utf-8")
