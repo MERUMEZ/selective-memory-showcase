@@ -552,7 +552,17 @@ CONTRADICTION_CORRECTION_RELIEF = _get_float("CONTRADICTION_CORRECTION_RELIEF", 
 CONTRADICTION_STABILITY_FACTOR = _get_float("CONTRADICTION_STABILITY_FACTOR", 0.25)
 
 # Насколько снижается вес вытесненного узла
-CONTRADICTION_WEIGHT_PENALTY = _get_float("CONTRADICTION_WEIGHT_PENALTY", 0.25)
+# НОЛЬ: поправка ПЕРЕНАПРАВЛЯЕТ, а не портит узел.
+#
+# Библиотека перешла на связь «заменяет»: устаревшее не отдаётся там, где
+# замена отвечает лучше, а вес узла не трогается вовсе. Прежние 0.25
+# снижали вес глобально — узел выпадал из ВСЕХ запросов, а не только из
+# того, где случилась поправка, и становился кандидатом на вытеснение.
+#
+# Цена ошибки была высокой: живой разговор дал семь ошибочных срабатываний
+# из семи. На бенчмарке поправок выключение штрафа не отняло ничего —
+# 66/78 и с ним, и без него.
+CONTRADICTION_WEIGHT_PENALTY = _get_float("CONTRADICTION_WEIGHT_PENALTY", 0.0)
 
 
 
